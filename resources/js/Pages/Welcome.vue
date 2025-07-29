@@ -1,6 +1,9 @@
 <script setup>
 import DefaultLayout from '@/Layouts/DefaultLayout.vue';
+import Hero from '@/Components/Hero.vue';
 import { Head, Link } from '@inertiajs/vue3';
+import Sponsors from '@/Components/Sponsors.vue';
+
 
 
 
@@ -9,6 +12,7 @@ import { Head, Link } from '@inertiajs/vue3';
 <template>
     <Head title="Welcome" />
     <DefaultLayout>
-        <h1>Hello</h1>
+        <Hero/>
+        <Sponsors/>
     </DefaultLayout>    
 </template>
