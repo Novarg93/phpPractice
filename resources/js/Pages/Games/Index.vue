@@ -1,6 +1,7 @@
 <template>
   <DefaultLayout>
     <section class="w-[90%] 2xl:w-[75%] mx-auto py-10 md:py-16 lg:py-20">
+        <pre>{{ games }}</pre>
 
         <div class="mb-6">
           <h1 class="text-3xl font-bold">Games</h1>
@@ -11,7 +12,7 @@
           <article
             v-for="g in games"
             :key="g.id"
-            class="border rounded-xl p-3 hover:shadow transition"
+            class="border border-border rounded-xl p-3 hover:shadow transition"
           >
             <img
               v-if="g.image_url"

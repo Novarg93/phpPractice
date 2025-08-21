@@ -1,7 +1,7 @@
 <template>
   <DefaultLayout>
     <section class="w-[90%] 2xl:w-[75%] mx-auto py-10 md:py-16 lg:py-20">
-
+        <pre>{{ category }}</pre>
         <nav class="text-sm text-muted-foreground mb-2">
           <Link :href="route('games.index')" class="hover:underline">Games</Link>
           <span class="mx-2">/</span>
@@ -70,7 +70,7 @@ import { Link, router } from '@inertiajs/vue3'
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 
 type Game = { id:number; name:string; slug:string }
-type Category = { id:number; name:string; slug:string; type:string }
+type Category = { id:number; name:string; slug:string; type:string; image?: string | null }
 type ProductCard = {
   id:number; category_id:number; name:string; slug:string;
   price_cents:number; image?:string|null; short?:string|null

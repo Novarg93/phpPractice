@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Support\Facades\Storage;
 
 class Product extends Model
 {
@@ -28,5 +30,16 @@ class Product extends Model
         return $q->where(function ($q) use ($qty) {
             $q->where('track_inventory', false)->orWhere('stock', '>=', $qty);
         });
+    }
+
+    // Аксессор для картинки
+    protected function image(): Attribute
+    {
+        return Attribute::get(fn ($value) => $value
+            ? (str_starts_with($value, 'http') || str_starts_with($value, '/')
+                ? $value
+                : Storage::url($value))
+            : null
+        );
     }
 }

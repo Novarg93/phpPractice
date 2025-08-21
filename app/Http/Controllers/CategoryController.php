@@ -32,7 +32,7 @@ class CategoryController extends Controller
 
         return Inertia::render('Catalog/Category', [
             'game'     => $game->only(['id','name','slug']),
-            'category' => $category->only(['id','name','slug','type']),
+            'category' => $category->only(['id','name','slug','type','image']),
             'products' => $products,
             'filters'  => $filters,
         ]);
