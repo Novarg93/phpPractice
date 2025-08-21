@@ -1,7 +1,7 @@
 <template>
   <DefaultLayout>
     <section class="w-[90%] 2xl:w-[75%] mx-auto py-10 md:py-16 lg:py-20">
-        <pre>{{ product }}</pre>
+        
         <nav class="text-sm text-muted-foreground mb-2">
           <Link :href="route('games.index')" class="hover:underline">Games</Link>
           <span class="mx-2">/</span>

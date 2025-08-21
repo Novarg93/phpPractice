@@ -22,6 +22,15 @@ class ProductForm
                     ->searchable()->preload()->required()
                     ->columnSpanFull(),
 
+                Select::make('categories')
+                    ->label('Additional categories')
+                    ->relationship('categories','name') // belongsToMany
+                    ->multiple()
+                    ->preload()
+                    ->searchable()
+                    ->hint('Primary category выбирается отдельным полем category_id')
+                    ->columnSpanFull(),    
+
                 TextInput::make('name')
                     ->required()->maxLength(255)
                     ->live(debounce: 300)

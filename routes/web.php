@@ -2,8 +2,9 @@
 
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\GameController;
-use App\Http\Controllers\CategoryController;
+
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\CatalogController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -33,13 +34,20 @@ Route::get('/catalog', function() {
 })->name('catalog');
 
 Route::get('/games', [GameController::class, 'index'])->name('games.index');
-Route::get('/games/{game:slug}', [GameController::class, 'show'])->name('games.show');
 
-// гарантирует, что {category} относится к {game}, а {product} — к {category}
+// общий листинг: ALL и фильтр по категории
+Route::get('/games', [GameController::class, 'index'])->name('games.index');
+
 Route::scopeBindings()->group(function () {
-    Route::get('/games/{game:slug}/{category:slug}', [CategoryController::class, 'show'])
+    // ALL (страница игры со всеми товарами)
+    Route::get('/games/{game:slug}', [CatalogController::class, 'index'])
+        ->name('games.show');
+
+    // Фильтр по категории (та же страница, но с выбранной категорией)
+    Route::get('/games/{game:slug}/{category:slug}', [CatalogController::class, 'index'])
         ->name('categories.show');
 
+    // Карточка товара
     Route::get('/games/{game:slug}/{category:slug}/{product:slug}', [ProductController::class, 'show'])
         ->name('products.show');
 });
