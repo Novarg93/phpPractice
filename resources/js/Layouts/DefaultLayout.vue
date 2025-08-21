@@ -75,7 +75,7 @@ const isOpen = ref<boolean>(false);
                                 </DrawerDescription>
                             </DrawerHeader>
                             <div class="flex flex-col items-center gap-2">
-                                <Link :href="route('catalog')">Catalog</Link>
+                                <Link :href="route('games.index')">games</Link>
                                 <Link :href="route('home')">FAQ</Link>
                                 <Link :href="route('home')">Reviews</Link>
                                 <Link :href="route('home')">Contact Us</Link>
@@ -99,7 +99,7 @@ const isOpen = ref<boolean>(false);
             <nav class="hidden lg:block">
                 <ul class="flex gap-4 items-center">
                     <li>
-                        <Link class="hover:underline " :href="route('catalog')">Catalog</Link>
+                        <Link class="hover:underline " :href="route('games.index')">games</Link>
                     </li>
                     <li>
                         <Link class="hover:underline " :href="route('login')">FAQ</Link>

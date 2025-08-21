@@ -55,7 +55,7 @@ import { ArrowRight } from "lucide-vue-next";
 
                 <!-- gradient effect img -->
                 <div
-                    class="absolute bottom-0 left-0 w-full h-20 md:h-28 bg-gradient-to-b from-background/0 via-background/50 to-background rounded-lg">
+                    class=" bottom-0 left-0 w-full h-20 md:h-28 bg-gradient-to-b from-background/0 via-background/50 to-background rounded-lg">
                 </div>
             </div>
         </div>

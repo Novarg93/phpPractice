@@ -49,7 +49,7 @@
   body { @apply bg-background text-foreground; }
 }
 
-/* твои анимации: переводим на rgb(var(--primary) / alpha) */
+
 @keyframes img-shadow-animation {
   from { opacity: 0.5; transform: translateY(30px); }
   to   { opacity: 1;   transform: translateY(0); }

@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\GameController;
+use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\ProductController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -28,5 +31,17 @@ Route::middleware('auth')->group(function () {
 Route::get('/catalog', function() {
     return Inertia::render('Catalog');
 })->name('catalog');
+
+Route::get('/games', [GameController::class, 'index'])->name('games.index');
+Route::get('/games/{game:slug}', [GameController::class, 'show'])->name('games.show');
+
+// гарантирует, что {category} относится к {game}, а {product} — к {category}
+Route::scopeBindings()->group(function () {
+    Route::get('/games/{game:slug}/{category:slug}', [CategoryController::class, 'show'])
+        ->name('categories.show');
+
+    Route::get('/games/{game:slug}/{category:slug}/{product:slug}', [ProductController::class, 'show'])
+        ->name('products.show');
+});
 
 require __DIR__.'/auth.php';
