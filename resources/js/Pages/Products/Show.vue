@@ -1,18 +1,32 @@
+<script setup lang="ts">
+import { Link } from '@inertiajs/vue3'
+import DefaultLayout from '@/Layouts/DefaultLayout.vue'
+import Breadcrumbs from '@/Components/Breadcrumbs.vue'
+
+type Game = { id:number; name:string; slug:string }
+type Category = { id:number; name:string; slug:string; type:string }
+type Product = {
+  id:number; name:string; slug:string; price_cents:number;
+  image?:string|null; short?:string|null; description?:string|null;
+  sku?:string|null; track_inventory:boolean; stock:number|null;
+}
+
+const props = defineProps<{ game: Game; category: Category; product: Product }>()
+const { game, category, product } = props
+
+function formatPrice(cents:number) {
+  return new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' }).format(cents / 100)
+}
+</script>
+
+
 <template>
   <DefaultLayout>
-    <section class="w-[90%] 2xl:w-[75%] mx-auto py-10 md:py-16 lg:py-20">
+    <section class="w-[90%] 2xl:w-[75%] mx-auto py-8 md:py-12 lg:py-16">
         
-        <nav class="text-sm text-muted-foreground mb-2">
-          <Link :href="route('games.index')" class="hover:underline">Games</Link>
-          <span class="mx-2">/</span>
-          <Link :href="route('games.show', game.slug)" class="hover:underline">{{ game.name }}</Link>
-          <span class="mx-2">/</span>
-          <Link :href="route('categories.show', [game.slug, category.slug])" class="hover:underline">{{ category.name }}</Link>
-          <span class="mx-2">/</span>
-          <span class="text-foreground">{{ product.name }}</span>
-        </nav>
+        <Breadcrumbs :game="game" :category="category" :product="product"/>
     
-        <div class="grid md:grid-cols-2 gap-6 mt-2">
+        <div class="grid md:grid-cols-2 gap-6 my-6">
           <div>
             <img v-if="product.image" :src="product.image" class="w-full rounded-xl border" />
             <div v-else class="aspect-video rounded-xl border grid place-items-center text-sm text-muted-foreground">
@@ -45,22 +59,3 @@
   </DefaultLayout>
 </template>
 
-<script setup lang="ts">
-import { Link } from '@inertiajs/vue3'
-import DefaultLayout from '@/Layouts/DefaultLayout.vue'
-
-type Game = { id:number; name:string; slug:string }
-type Category = { id:number; name:string; slug:string; type:string }
-type Product = {
-  id:number; name:string; slug:string; price_cents:number;
-  image?:string|null; short?:string|null; description?:string|null;
-  sku?:string|null; track_inventory:boolean; stock:number|null;
-}
-
-const props = defineProps<{ game: Game; category: Category; product: Product }>()
-const { game, category, product } = props
-
-function formatPrice(cents:number) {
-  return new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' }).format(cents / 100)
-}
-</script>

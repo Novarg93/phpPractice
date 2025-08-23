@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3'
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
+import Breadcrumbs from '@/Components/Breadcrumbs.vue'
+import type { Category as BaseCategory, Product as BaseProduct, Paginator } from '@/types'
 
-type Cat = { id:number; name:string; slug:string; type:string; image?:string|null; products_count?:number }
-type Prod = { id:number; name:string; slug:string; price_cents:number; image?:string|null; short?:string|null; categories?: Cat[] }
-type Paginator<T> = { data:T[]; links:Array<{ url:string|null; label:string; active:boolean }> }
+
+type Cat = BaseCategory
+type Prod = BaseProduct & { categories?: Cat[] }
+
+
 
 const props = defineProps<{
   game: { id:number; name:string; slug:string; image_url?:string|null; description?:string|null }
@@ -26,18 +30,11 @@ function formatPrice(cents:number) {
   <DefaultLayout>
     <section class="w-[90%] 2xl:w-[75%] mx-auto py-8 md:py-12 lg:py-16">
       <!-- breadcrumbs -->
-      <nav class="text-sm text-muted-foreground mb-3">
-        <Link :href="route('games.index')" class="hover:underline">Games</Link>
-        <span class="mx-2">/</span>
-        <span class="text-foreground">{{ game.name }}</span>
-        <template v-if="category">
-          <span class="mx-2">/</span>
-          <span class="text-foreground">{{ category.name }}</span>
-        </template>
-      </nav>
+       
+       <Breadcrumbs :game="game" :category="category" />
 
       <!-- header -->
-      <header class="mb-6">
+      <header class="my-6">
         <h1 class="text-3xl font-semibold">
           {{ category ? category.name : game.name }}
         </h1>
@@ -65,7 +62,7 @@ function formatPrice(cents:number) {
             class="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-accent"
             :class="category?.id === c.id ? 'bg-primary text-primary-foreground border-transparent' : ''"
           >
-            <img v-if="c.image" :src="c.image" class="w-6 h-6 rounded object-cover border-0" alt="">
+            <img v-if="c.image" :src="c.image" class="w-6 h-6 rounded object-cover text-white border-0" alt="">
             <span class="flex-1">{{ c.name }}</span>
             <span class="text-xs opacity-70">{{ c.products_count }}</span>
           </Link>

@@ -54,7 +54,9 @@ export default {
           foreground: 'rgb(var(--destructive-foreground) / <alpha-value>)',
         },
 
-        border: 'rgb(var(--border) / <alpha-value>)',
+         border: {
+            DEFAULT: 'rgb(var(--border) / <alpha-value>)', // 👈 дефолт для border
+          },
         input: 'rgb(var(--input) / <alpha-value>)',
         ring: 'rgb(var(--ring) / <alpha-value>)',
 
