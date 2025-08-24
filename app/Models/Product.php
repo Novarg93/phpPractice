@@ -37,6 +37,17 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
+    protected static function booted()
+{
+    static::saved(function (Product $product) {
+        if ($product->category_id) {
+            $product->categories()->syncWithoutDetaching([
+                $product->category_id => ['is_primary' => true],
+            ]);
+        }
+    });
+}
+
     // новая many-to-many
     public function categories(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {

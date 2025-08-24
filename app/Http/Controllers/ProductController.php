@@ -9,14 +9,17 @@ use Inertia\Inertia;
 
 class ProductController extends Controller
 {
-    public function show(Game $game, Category $category, Product $product)
-    {
-        abort_unless($category->game_id === $game->id && $product->category_id === $category->id, 404);
+    public function show(\App\Models\Game $game, \App\Models\Category $category, \App\Models\Product $product)
+{
+    $belongs = $product->category_id === $category->id
+        || $product->categories()->whereKey($category->id)->exists();
 
-        return Inertia::render('Products/Show', [
-            'game'    => $game->only(['id','name','slug']),
-            'category'=> $category->only(['id','name','slug','type']),
-            'product' => $product,
-        ]);
-    }
+    abort_unless($belongs, 404);
+
+    return Inertia::render('Product/Show', [
+        'game' => $game,
+        'category' => $category,
+        'product' => $product,
+    ]);
+}
 }

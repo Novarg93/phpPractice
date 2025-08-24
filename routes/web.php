@@ -49,6 +49,7 @@ Route::scopeBindings()->group(function () {
 
     // Карточка товара
     Route::get('/games/{game:slug}/{category:slug}/{product:slug}', [ProductController::class, 'show'])
+        ->scopeBindings()
         ->name('products.show');
 });
 

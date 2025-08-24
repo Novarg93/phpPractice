@@ -2,14 +2,8 @@
 import { Link } from '@inertiajs/vue3'
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 import Breadcrumbs from '@/Components/Breadcrumbs.vue'
+import type { Game, Category , Product  } from '@/types'
 
-type Game = { id:number; name:string; slug:string }
-type Category = { id:number; name:string; slug:string; type:string }
-type Product = {
-  id:number; name:string; slug:string; price_cents:number;
-  image?:string|null; short?:string|null; description?:string|null;
-  sku?:string|null; track_inventory:boolean; stock:number|null;
-}
 
 const props = defineProps<{ game: Game; category: Category; product: Product }>()
 const { game, category, product } = props
@@ -28,7 +22,7 @@ function formatPrice(cents:number) {
     
         <div class="grid md:grid-cols-2 gap-6 my-6">
           <div>
-            <img v-if="product.image" :src="product.image" class="w-full rounded-xl border" />
+            <img v-if="product.image" :src="product.image" class="w-full rounded-xl border border-border " />
             <div v-else class="aspect-video rounded-xl border grid place-items-center text-sm text-muted-foreground">
               No image
             </div>

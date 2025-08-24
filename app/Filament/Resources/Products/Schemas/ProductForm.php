@@ -9,6 +9,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\FileUpload;
 use Illuminate\Support\Str;
+use App\Models\Category;
 
 class ProductForm
 {
@@ -17,19 +18,25 @@ class ProductForm
         return $schema
             ->columns(2)
             ->components([
-                Select::make('category_id')
-                    ->relationship('category','name')
-                    ->searchable()->preload()->required()
-                    ->columnSpanFull(),
+                Select::make('category_id') // главная категория
+                    ->relationship('category', 'name')
+                    ->searchable()
+                    ->preload()
+                    ->required(),
 
                 Select::make('categories')
-                    ->label('Additional categories')
-                    ->relationship('categories','name') // belongsToMany
+                    ->relationship('categories', 'name')
                     ->multiple()
                     ->preload()
                     ->searchable()
-                    ->hint('Primary category выбирается отдельным полем category_id')
-                    ->columnSpanFull(),    
+                    ->options(function (callable $get) {
+                        $mainId = $get('category_id');
+
+                        return Category::query()
+                            ->when($mainId, fn($q) => $q->where('id', '!=', $mainId))
+                            ->pluck('name', 'id');
+                    })
+                    ->helperText('Выберите дополнительные категории, кроме основной'),
 
                 TextInput::make('name')
                     ->required()->maxLength(255)

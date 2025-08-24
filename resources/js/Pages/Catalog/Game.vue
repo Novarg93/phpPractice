@@ -72,7 +72,7 @@ function formatPrice(cents:number) {
         <main class="col-span-12 md:col-span-9">
           <div class="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             <article v-for="p in products.data" :key="p.id" class="border border-border rounded-xl p-3 hover:shadow transition">
-              <img v-if="p.image" :src="p.image" class="w-full h-36 object-cover  rounded-lg mb-2" />
+              <img v-if="p.image" :src="p.image" class="w-full h-36 object-cover object-top  rounded-lg mb-2" />
               <h3 class="font-medium line-clamp-2">{{ p.name }}</h3>
               <div class="text-sm text-muted-foreground line-clamp-2">{{ p.short }}</div>
               <div class="mt-2 font-semibold">{{ formatPrice(p.price_cents) }}</div>

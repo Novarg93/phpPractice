@@ -17,8 +17,12 @@ class ProductsTable
     {
         return $table
             ->columns([
-                TextColumn::make('category.name')
-                    ->searchable(),
+                TextColumn::make('categories.name')
+                    ->label('Categories')
+                    ->badge()
+                    ->limitList(3)
+                    ->separator(', ')
+                    ->toggleable(),
                 TextColumn::make('name')
                     ->searchable(),
                 TextColumn::make('slug')

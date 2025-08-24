@@ -7,15 +7,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/Components/ui/breadcrumb'
+import type { Game,  Category , Product,  } from '@/types'
 
-
-type Game = { id: number; name: string; slug: string }
-type Category = { id: number; name: string; slug: string; type: string }
-type Product = {
-  id: number; name: string; slug: string; price_cents: number;
-  image?: string | null; short?: string | null; description?: string | null;
-  sku?: string | null; track_inventory: boolean; stock: number | null;
-}
 
 
 const props = defineProps<{
@@ -31,7 +24,7 @@ const { game, category, product } = props
   <Breadcrumb>
     <BreadcrumbList>
       <BreadcrumbItem>
-        <BreadcrumbLink href="/">Games</BreadcrumbLink>
+        <BreadcrumbLink :href="route('games.index')">Games</BreadcrumbLink>
       </BreadcrumbItem>
 
       <BreadcrumbSeparator />
