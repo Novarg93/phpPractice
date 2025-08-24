@@ -4,13 +4,27 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class {
-    public function up(): void {
-        Schema::table('games', fn($t) => $t->text('short')->nullable()->after('description'));
-        Schema::table('categories', fn($t) => $t->text('short')->nullable()->after('description'));
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('games', function (Blueprint $table) {
+            $table->string('short')->nullable()->after('slug');
+        });
+
+        Schema::table('categories', function (Blueprint $table) {
+            $table->string('short')->nullable()->after('type');
+        });
     }
-    public function down(): void {
-        Schema::table('games', fn($t) => $t->dropColumn('short'));
-        Schema::table('categories', fn($t) => $t->dropColumn('short'));
+
+    public function down(): void
+    {
+        Schema::table('games', function (Blueprint $table) {
+            $table->dropColumn('short');
+        });
+
+        Schema::table('categories', function (Blueprint $table) {
+            $table->dropColumn('short');
+        });
     }
 };

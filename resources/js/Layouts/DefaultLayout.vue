@@ -26,7 +26,7 @@ import {
 import { Button } from "@/Components/ui/button";
 import { Separator } from "@/Components/ui/separator";
 
-import { ChevronsDown, Menu, X  } from "lucide-vue-next";
+import { ChevronsDown, Menu, X } from "lucide-vue-next";
 
 
 
@@ -46,54 +46,56 @@ const isOpen = ref<boolean>(false);
                 class="bg-gradient-to-tr from-primary via-primary/70 to-primary rounded-lg w-9 h-9 mr-2 border border-transparent text-white" />
             ShadcnVue
             </Link>
-            <!-- Mobile -->            
-            
-                <Drawer direction="left" v-model:open="isOpen">
-                    <DrawerTrigger class="lg:hidden" as-child>
-                        <Button variant="ghost">
-                            <Menu />
-                        </Button>
-                    </DrawerTrigger>
-                    <DrawerContent
-                        class="flex w-full flex-col justify-between border-border rounded-tr-2xl rounded-br-2xl ">
-                        <div>
+            <!-- Mobile -->
 
-                            <DrawerHeader class="bg-card p-2 mx-2 border border-border  my-10 rounded-2xl">
-                                <DrawerTitle class="flex justify-between items-center">
-                                    <a href="/" class="flex items-center">
-                                        <ChevronsDown
-                                            class="bg-gradient-to-tr border-primary from-primary/70 via-primary to-primary/70 rounded-lg size-9 mr-2 border text-white" />
-                                        ShadcnVue
-                                    </a>
-                                    <DrawerClose>
-                                        <Button variant="ghost"><X /></Button>
-                                    </DrawerClose>
-                                </DrawerTitle>
-                                
-                                <DrawerDescription  class="sr-only">
-                                    Navigation Menu
-                                </DrawerDescription>
-                            </DrawerHeader>
-                            <div class="flex flex-col items-center gap-2">
-                                <Link :href="route('games.index')">games</Link>
-                                <Link :href="route('home')">FAQ</Link>
-                                <Link :href="route('home')">Reviews</Link>
-                                <Link :href="route('home')">Contact Us</Link>
-                            </div>
-                            <Separator class="my-4" />
-                            <div v-if="!$page.props.auth.user" class="flex flex-col gap-4 items-center">
-                                <Link class="hover:underline " :href="route('login')">Login</Link>
-                                <Link class="hover:underline " :href="route('register')">Sign Up</Link>
-                            </div>
-                            <div v-if="$page.props.auth.user" class="flex flex-col items-center">
-                                <Link class="hover:underline " :href="route('dashboard')">Dashboard</Link>
-                            </div>
+            <Drawer direction="left" v-model:open="isOpen">
+                <DrawerTrigger class="lg:hidden" as-child>
+                    <Button variant="ghost">
+                        <Menu />
+                    </Button>
+                </DrawerTrigger>
+                <DrawerContent
+                    class="flex w-full flex-col justify-between border-border rounded-tr-2xl rounded-br-2xl ">
+                    <div>
+
+                        <DrawerHeader class="bg-card p-2 mx-2 border border-border  my-10 rounded-2xl">
+                            <DrawerTitle class="flex justify-between items-center">
+                                <a href="/" class="flex items-center">
+                                    <ChevronsDown
+                                        class="bg-gradient-to-tr border-primary from-primary/70 via-primary to-primary/70 rounded-lg size-9 mr-2 border text-white" />
+                                    ShadcnVue
+                                </a>
+                                <DrawerClose>
+                                    <Button variant="ghost">
+                                        <X />
+                                    </Button>
+                                </DrawerClose>
+                            </DrawerTitle>
+
+                            <DrawerDescription class="sr-only">
+                                Navigation Menu
+                            </DrawerDescription>
+                        </DrawerHeader>
+                        <div class="flex flex-col items-center gap-2">
+                            <Link :href="route('games.index')">games</Link>
+                            <Link :href="route('home')">FAQ</Link>
+                            <Link :href="route('home')">Reviews</Link>
+                            <Link :href="route('home')">Contact Us</Link>
                         </div>
+                        <Separator class="my-4" />
+                        <div v-if="!$page.props.auth.user" class="flex flex-col gap-4 items-center">
+                            <Link class="hover:underline " :href="route('login')">Login</Link>
+                            <Link class="hover:underline " :href="route('register')">Sign Up</Link>
+                        </div>
+                        <div v-if="$page.props.auth.user" class="flex flex-col items-center">
+                            <Link class="hover:underline " :href="route('dashboard')">Dashboard</Link>
+                        </div>
+                    </div>
 
-                    </DrawerContent>
-                </Drawer>
+                </DrawerContent>
+            </Drawer>
 
-            
+
 
             <!-- Desktop -->
             <nav class="hidden lg:block">
@@ -119,7 +121,28 @@ const isOpen = ref<boolean>(false);
                     <Link class="hover:underline " :href="route('register')">Sign Up</Link>
                 </div>
                 <div v-if="$page.props.auth.user" class="flex justify-between items-center">
-                    <Link class="hover:underline " :href="route('dashboard')">Dashboard</Link>
+                    <Link class="hover:underline " :href="route('dashboard')">
+                    <span class="inline-flex  rounded-md">
+                        <button type="button"
+                            class="inline-flex items-center gap-2 rounded-md border border-transparent px-3 py-2 text-sm font-medium leading-4 transition duration-150 ease-in-out hover:text-gray-100 focus:outline-none">
+                            <template v-if="$page.props.auth.user.avatar">
+                                <img :src="$page.props.auth.user.avatar" alt="Avatar"
+                                    class="h-8 w-8 rounded-full object-cover" />
+                            </template>
+                            <template v-else>
+                                <div
+                                    class="h-8 w-8 rounded-full bg-gray-500 text-white flex items-center justify-center text-sm font-bold">
+                                    {{ $page.props.auth.user.name.charAt(0).toUpperCase() }}
+                                </div>
+                            </template>
+
+
+
+
+                        </button>
+                    </span>
+                    </Link>
+
                 </div>
 
             </div>
@@ -130,7 +153,8 @@ const isOpen = ref<boolean>(false);
             <slot />
         </main>
 
-        <footer class='w-[90%] 2xl:w-[75%]  mx-auto border border-border   rounded-2xl  p-4 lg:p-8 bg-card shadow-md mb-10'>
+        <footer
+            class='w-[90%] 2xl:w-[75%]  mx-auto border border-border   rounded-2xl  p-4 lg:p-8 bg-card shadow-md mb-10'>
             <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-x-12 gap-y-8">
                 <div class="col-span-full xl:col-span-2">
                     <a href="#" class="flex font-bold items-center">
