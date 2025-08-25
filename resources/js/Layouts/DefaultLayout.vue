@@ -1,17 +1,9 @@
 <script lang="ts" setup>
-import { ref, computed, nextTick, watch, } from "vue";
+import { ref, onMounted, nextTick, watch, } from "vue";
 import { usePage } from '@inertiajs/vue3'
 import { Link } from '@inertiajs/vue3';
-import {
-    Sheet,
-    SheetClose,
-    SheetContent,
-    SheetDescription,
-    SheetFooter,
-    SheetHeader,
-    SheetTitle,
-    SheetTrigger,
-} from '@/Components/ui/sheet'
+import { useCartSummary } from '@/composables/useCartSummary'
+import axios from 'axios'
 
 import {
     Drawer,
@@ -25,14 +17,20 @@ import {
 
 import { Button } from "@/Components/ui/button";
 import { Separator } from "@/Components/ui/separator";
-
+import { ShoppingCart } from "lucide-vue-next";
 import { ChevronsDown, Menu, X } from "lucide-vue-next";
+
+const { summary, loadSummary } = useCartSummary()   
+
+function formatPrice(cents:number) {
+  return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(cents/100)
+}
 
 
 
 const isOpen = ref<boolean>(false);
 
-
+onMounted(() => loadSummary())    
 
 </script>
 
@@ -114,8 +112,19 @@ const isOpen = ref<boolean>(false);
                     </li>
                 </ul>
             </nav>
-
+           
             <div class="hidden lg:flex pr-2 xl:pr-4">
+                <div class="flex items-center gap-2">
+                    <span v-if="summary.total_qty">{{ formatPrice(summary.total_sum_cents) }}</span>
+                <a href="/cart" class="relative">
+                
+                <span v-if="summary.total_qty" class="absolute -top-2 -right-2 bg-primary text-white text-xs px-2 py-0.5 rounded-full">
+                    {{ summary.total_qty }}
+                </span>
+                <ShoppingCart />
+                </a>
+                
+            </div>
                 <div v-if="!$page.props.auth.user" class="flex justify-between gap-8 items-center">
                     <Link class="hover:underline " :href="route('login')">Login</Link>
                     <Link class="hover:underline " :href="route('register')">Sign Up</Link>

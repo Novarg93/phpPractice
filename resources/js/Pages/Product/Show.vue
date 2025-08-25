@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 import type { Game, Category, Product } from '@/types'
+import { router } from '@inertiajs/vue3'
+import axios from 'axios'
+import { useCartSummary } from '@/composables/useCartSummary'
+
+const { summary, loadSummary } = useCartSummary()
 
 const props = defineProps<{ game: Game; category: Category; product: Product & {
   option_groups?: Array<{
@@ -54,7 +59,7 @@ const totalCents = computed(() => {
 })
 
 // пример отправки в корзину (payload: выбранные value_ids)
-function addToCart() {
+async function addToCart() {
   const chosen:number[] = []
   product.option_groups?.forEach(g => {
     if (g.type === 'radio_additive') {
@@ -64,10 +69,17 @@ function addToCart() {
       selectedMulti.value[g.id]?.forEach(id => chosen.push(id))
     }
   })
-  // TODO: axios.post('/cart/add', { product_id: product.id, option_value_ids: chosen, qty: 1 })
-  // и на бэке пересчитать цену по этим ids (см. ниже)
-  alert(`Add to cart:\nvalue_ids = [${chosen.join(', ')}]\nfinal = ${formatPrice(totalCents.value)}`)
+
+  await axios.post('/cart/add', {
+    product_id: product.id,
+    option_value_ids: chosen,
+    qty: 1,
+  })
+
+  
+  await loadSummary()
 }
+
 </script>
 
 <template>

@@ -8,6 +8,7 @@ use App\Http\Controllers\CatalogController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use App\Http\Controllers\CartController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -27,6 +28,16 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+Route::middleware('auth')->group(function () {
+    Route::prefix('cart')->group(function () {
+        Route::get('/', [CartController::class, 'index'])->name('cart.index');
+        Route::post('/add', [CartController::class, 'add'])->name('cart.add');
+        Route::post('/update', [CartController::class, 'update'])->name('cart.update');
+        Route::post('/remove', [CartController::class, 'remove'])->name('cart.remove');
+        Route::get('/summary', [CartController::class, 'summary'])->name('cart.summary');
+    });
 });
 
 Route::get('/catalog', function() {
