@@ -20,17 +20,17 @@ import { Separator } from "@/Components/ui/separator";
 import { ShoppingCart } from "lucide-vue-next";
 import { ChevronsDown, Menu, X } from "lucide-vue-next";
 
-const { summary, loadSummary } = useCartSummary()   
+const { summary, loadSummary } = useCartSummary()
 
-function formatPrice(cents:number) {
-  return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(cents/100)
+function formatPrice(cents: number) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
 }
 
 
 
 const isOpen = ref<boolean>(false);
 
-onMounted(() => loadSummary())    
+onMounted(() => loadSummary())
 
 </script>
 
@@ -112,20 +112,21 @@ onMounted(() => loadSummary())
                     </li>
                 </ul>
             </nav>
-           
-            <div class="hidden lg:flex pr-2 xl:pr-4">
-                <div class="flex items-center gap-2">
+
+            <div class="hidden lg:flex pr-2 xl:pr-4 gap-4">
+                <div class="flex items-center gap-2 ">
                     <span v-if="summary.total_qty">{{ formatPrice(summary.total_sum_cents) }}</span>
-                <a href="/cart" class="relative">
-                
-                <span v-if="summary.total_qty" class="absolute -top-2 -right-2 bg-primary text-white text-xs px-2 py-0.5 rounded-full">
-                    {{ summary.total_qty }}
-                </span>
-                <ShoppingCart />
-                </a>
-                
-            </div>
-                <div v-if="!$page.props.auth.user" class="flex justify-between gap-8 items-center">
+                    <a href="/cart" class="relative">
+
+                        <span v-if="summary.total_qty"
+                            class="absolute -top-2 -right-2 bg-primary text-white text-xs px-2 py-0.5 rounded-full">
+                            {{ summary.total_qty }}
+                        </span>
+                        <ShoppingCart />
+                    </a>
+
+                </div>
+                <div v-if="!$page.props.auth.user" class="flex  justify-between gap-4 items-center">
                     <Link class="hover:underline " :href="route('login')">Login</Link>
                     <Link class="hover:underline " :href="route('register')">Sign Up</Link>
                 </div>

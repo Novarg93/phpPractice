@@ -30,14 +30,12 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
-Route::middleware('auth')->group(function () {
-    Route::prefix('cart')->group(function () {
-        Route::get('/', [CartController::class, 'index'])->name('cart.index');
-        Route::post('/add', [CartController::class, 'add'])->name('cart.add');
-        Route::post('/update', [CartController::class, 'update'])->name('cart.update');
-        Route::post('/remove', [CartController::class, 'remove'])->name('cart.remove');
-        Route::get('/summary', [CartController::class, 'summary'])->name('cart.summary');
-    });
+Route::prefix('cart')->group(function () {
+    Route::get('/',        [CartController::class, 'index'])->name('cart.index');
+    Route::post('/add',    [CartController::class, 'add'])->name('cart.add');
+    Route::post('/update', [CartController::class, 'update'])->name('cart.update');
+    Route::post('/remove', [CartController::class, 'remove'])->name('cart.remove');
+    Route::get('/summary', [CartController::class, 'summary'])->name('cart.summary');
 });
 
 Route::get('/catalog', function() {

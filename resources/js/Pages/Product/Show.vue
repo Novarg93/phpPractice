@@ -6,6 +6,7 @@ import type { Game, Category, Product } from '@/types'
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
 import { useCartSummary } from '@/composables/useCartSummary'
+import Breadcrumbs from '@/Components/Breadcrumbs.vue'
 
 const { summary, loadSummary } = useCartSummary()
 
@@ -85,6 +86,9 @@ async function addToCart() {
 <template>
   <DefaultLayout>
     <section class="w-[90%] 2xl:w-[75%] mx-auto py-8 md:py-12 lg:py-16">
+      
+      <Breadcrumbs :game="game" :category="category" :product="product" />
+
       <!-- твои хлебные крошки и картинка как было -->
       <div class="grid md:grid-cols-2 gap-6 my-6">
         <div>

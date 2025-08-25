@@ -24,7 +24,7 @@ const { game, category, product } = props
   <Breadcrumb>
     <BreadcrumbList>
       <BreadcrumbItem>
-        <BreadcrumbLink :href="route('games.index')">Games</BreadcrumbLink>
+        <BreadcrumbLink :href="route?.('games.index') ?? '/games'">Games</BreadcrumbLink>
       </BreadcrumbItem>
 
       <BreadcrumbSeparator />
