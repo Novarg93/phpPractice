@@ -104,23 +104,24 @@ async function removeItem(item: CartItem) {
 
                 <template v-if="$page.props.auth?.user">
                     <div class="flex justify-end">
-                    <button class="mt-3 px-4 py-2 bg-primary text-primary-foreground  rounded-lg">
-                                        Checkout
-                                        </button>
+                        <button class="mt-3 px-4 py-2 bg-primary text-primary-foreground  rounded-lg">
+                            Checkout
+                        </button>
                     </div>
-                    
+
                 </template>
                 <template v-else>
-                     <div class="flex justify-end">
-                    <Link :href="route('login')" class="mt-3 inline-block px-4 py-2 bg-primary text-primary-foreground rounded-lg">
-                    Login to checkout
-                    </Link>
+                    <div class="flex justify-end">
+                        <Link :href="route('login')"
+                            class="mt-3 inline-block px-4 py-2 bg-primary text-primary-foreground rounded-lg">
+                        Login to checkout
+                        </Link>
                     </div>
                 </template>
             </div>
             <div v-else class="text-center text-muted-foreground">
-        Your cart is empty.
-      </div>
+                Your cart is empty.
+            </div>
 
 
         </section>
