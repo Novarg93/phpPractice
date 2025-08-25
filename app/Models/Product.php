@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 
 class Product extends Model
@@ -82,5 +83,9 @@ class Product extends Model
         return $q->where(function ($q) use ($qty) {
             $q->where('track_inventory', false)->orWhere('stock', '>=', $qty);
         });
+    }
+     public function optionGroups(): HasMany
+    {
+        return $this->hasMany(OptionGroup::class)->orderBy('position');
     }
 }

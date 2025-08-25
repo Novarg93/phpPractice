@@ -12,17 +12,15 @@ class DatabaseSeeder extends Seeder
      * Seed the application's database.
      */
     public function run(): void
-    {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
-
-        $this->call(CatalogSeeder::class);
-        $this->call(CategoryProductBackfillSeeder::class);
-    }
+{
+    \App\Models\User::firstOrCreate(
+        ['email' => 'admin@admin.admin'],
+        [
+            'name' => 'admin@admin.admin',
+            'password' => bcrypt('admin@admin.admin'),
+        ]
+    );
+}
 
     
 }
