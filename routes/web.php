@@ -1,35 +1,48 @@
 <?php
 
-use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\GameController;
-
-use App\Http\Controllers\ProductController;
-use App\Http\Controllers\CatalogController;
+use App\Http\Controllers\{
+    ProfileController,
+    GameController,
+    CheckoutController,
+    OrderController,
+    ProductController,
+    CatalogController,
+    CartController
+};
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
-use App\Http\Controllers\CartController;
 
-Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-        'laravelVersion' => Application::VERSION,
-        'phpVersion' => PHP_VERSION,
-    ]);
-})->name('home');
+Route::get('/', fn() => Inertia::render('Welcome', [
+    'canLogin' => Route::has('login'),
+    'canRegister' => Route::has('register'),
+    'laravelVersion' => Application::VERSION,
+    'phpVersion' => PHP_VERSION,
+]))->name('home');
 
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/dashboard', fn() => Inertia::render('Dashboard'))->name('dashboard');
 
-
-Route::middleware('auth')->group(function () {
+    // Profile
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // Checkout
+    Route::get('/checkout', [CheckoutController::class, 'index'])->name('checkout.index');
+    // создаёт Stripe Checkout Session
+    Route::post('/checkout/session', [CheckoutController::class, 'createSession'])->name('checkout.session');
+
+    // success/cancel после возврата со Stripe
+    Route::get('/checkout/success', [CheckoutController::class, 'success'])->name('checkout.success');
+    Route::get('/checkout/cancel',  [CheckoutController::class, 'cancel'])->name('checkout.cancel');
+
+    // Orders
+    Route::get('/profile/orders', [OrderController::class, 'index'])->name('orders.index');
+    Route::get('/profile/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
 });
 
+// Cart (доступен гостям)
 Route::prefix('cart')->group(function () {
     Route::get('/',        [CartController::class, 'index'])->name('cart.index');
     Route::post('/add',    [CartController::class, 'add'])->name('cart.add');
@@ -38,28 +51,15 @@ Route::prefix('cart')->group(function () {
     Route::get('/summary', [CartController::class, 'summary'])->name('cart.summary');
 });
 
-Route::get('/catalog', function() {
-    return Inertia::render('Catalog');
-})->name('catalog');
+Route::get('/catalog', fn() => Inertia::render('Catalog'))->name('catalog');
 
-Route::get('/games', [GameController::class, 'index'])->name('games.index');
-
-// общий листинг: ALL и фильтр по категории
 Route::get('/games', [GameController::class, 'index'])->name('games.index');
 
 Route::scopeBindings()->group(function () {
-    // ALL (страница игры со всеми товарами)
-    Route::get('/games/{game:slug}', [CatalogController::class, 'index'])
-        ->name('games.show');
-
-    // Фильтр по категории (та же страница, но с выбранной категорией)
-    Route::get('/games/{game:slug}/{category:slug}', [CatalogController::class, 'index'])
-        ->name('categories.show');
-
-    // Карточка товара
+    Route::get('/games/{game:slug}', [CatalogController::class, 'index'])->name('games.show');
+    Route::get('/games/{game:slug}/{category:slug}', [CatalogController::class, 'index'])->name('categories.show');
     Route::get('/games/{game:slug}/{category:slug}/{product:slug}', [ProductController::class, 'show'])
-        ->scopeBindings()
-        ->name('products.show');
+        ->scopeBindings()->name('products.show');
 });
 
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';

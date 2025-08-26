@@ -104,9 +104,9 @@ async function removeItem(item: CartItem) {
 
                 <template v-if="$page.props.auth?.user">
                     <div class="flex justify-end">
-                        <button class="mt-3 px-4 py-2 bg-primary text-primary-foreground  rounded-lg">
+                        <Link :href="route('checkout.index')" class="mt-3 px-4 py-2 bg-primary text-primary-foreground  rounded-lg">
                             Checkout
-                        </button>
+                        </Link>
                     </div>
 
                 </template>

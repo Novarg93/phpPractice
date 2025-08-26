@@ -22,6 +22,7 @@
     },
     "dependencies": {
         "@selemondev/vue3-marquee": "^0.0.8",
+        "@stripe/stripe-js": "^7.9.0",
         "@vueuse/core": "^13.6.0",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
