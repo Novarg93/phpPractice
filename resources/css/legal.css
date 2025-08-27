@@ -1,0 +1,255 @@
+.legal h2 {
+    margin-bottom: 1.5rem; /* mb-6 */
+    font-size: 1.5rem; /* text-2xl */
+    font-weight: 700;
+}
+
+.legal h3 {
+    margin-bottom: 1.5rem; /* mb-6 */
+}
+
+.legal p {
+    margin-bottom: 1.5rem; /* mb-6 */
+    font-size: 1rem; /* text-base */
+    color: #d1d5db; /* text-gray-300 */
+}
+@media (min-width: 768px) {
+    .legal p {
+        font-size: 1.125rem; /* md:text-lg */
+    }
+}
+@media (min-width: 1024px) {
+    .legal p {
+        font-size: 1.25rem; /* lg:text-xl */
+    }
+}
+
+.legal span {
+    margin-bottom: 1.5rem;
+    font-size: 1rem;
+    color: #d1d5db;
+}
+@media (min-width: 768px) {
+    .legal span {
+        font-size: 1.125rem;
+    }
+}
+@media (min-width: 1024px) {
+    .legal span {
+        font-size: 1.25rem;
+    }
+}
+
+.legal img {
+    margin-bottom: 1rem; /* mb-4 */
+}
+
+.legal blockquote {
+    margin-bottom: 1rem;
+    color: #d1d5db;
+}
+
+.legal pre {
+    margin-bottom: 1rem;
+    color: #d1d5db;
+}
+
+.legal a {
+    font-size: 1rem;
+    color: #d1d5db;
+    text-decoration: underline;
+}
+.legal a:hover {
+    text-decoration: none;
+    color: var(--primary);
+}
+@media (min-width: 768px) {
+    .legal a {
+        font-size: 1.125rem;
+    }
+}
+@media (min-width: 1024px) {
+    .legal a {
+        font-size: 1.25rem;
+    }
+}
+
+.card ol {
+    position: relative;
+}
+.card ol li {
+    list-style: decimal inside;
+}
+
+.card ul {
+    position: relative;
+}
+.card ul li {
+    list-style: disc inside;
+}
+
+
+
+
+
+
+
+
+
+.legal ol {
+    position: relative;
+    margin-bottom: 1rem;
+    margin-left: 1rem;
+    
+    color: #d1d5db;
+}
+.legal ol li {
+    margin-bottom: 1rem;
+    margin-left: 1rem;
+    list-style: decimal inside;
+    color: #d1d5db;
+    font-weight: 600; /* marker:font-semibold */
+}
+.legal ol li img {
+    margin-top: 1rem;
+    color: #d1d5db;
+}
+
+.legal ul {
+    position: relative;
+    margin-bottom: 1rem;
+    margin-left: 1rem;
+    
+    color: #d1d5db;
+}
+.legal ul li {
+    margin-bottom: 1rem;
+    margin-left: 1rem;
+    list-style: disc inside;
+    color: #d1d5db;
+}
+.legal ul li img {
+    margin-top: 1rem;
+    color: #d1d5db;
+}
+
+
+.product h2 {
+    margin-bottom: 1.5rem; /* mb-6 */
+    font-size: 1.5rem; /* text-2xl */
+    font-weight: 700;
+}
+
+.product h3 {
+    margin-bottom: 1.5rem; /* mb-6 */
+}
+
+.product p {
+    margin-bottom: 1.5rem; /* mb-6 */
+    font-size: 1rem; /* text-base */
+    color: #d1d5db; /* text-gray-300 */
+}
+@media (min-width: 768px) {
+    .product p {
+        font-size: 1.125rem; /* md:text-lg */
+    }
+}
+@media (min-width: 1024px) {
+    .product p {
+        font-size: 1.25rem; /* lg:text-xl */
+    }
+}
+
+.product span {
+    margin-bottom: 1.5rem;
+    font-size: 1rem;
+    color: #d1d5db;
+}
+@media (min-width: 768px) {
+    .product span {
+        font-size:  1rem;
+    }
+}
+@media (min-width: 1024px) {
+    .product span {
+        font-size:  1rem;
+    }
+}
+@media (min-width: 1440px) {
+    .product span {
+        font-size:  1.125rem;
+    }
+}
+
+.product img {
+    margin-bottom: 1rem; /* mb-4 */
+}
+
+.product blockquote {
+    margin-bottom: 1rem;
+    color: #d1d5db;
+}
+
+.product pre {
+    margin-bottom: 1rem;
+    color: #d1d5db;
+}
+
+.product a {
+    font-size: 1rem;
+    color: #d1d5db;
+    text-decoration: underline;
+}
+.product a:hover {
+    text-decoration: none;
+    color: var(--primary);
+}
+@media (min-width: 768px) {
+    .product a {
+        font-size: 1.125rem;
+    }
+}
+@media (min-width: 1024px) {
+    .product a {
+        font-size: 1.25rem;
+    }
+}
+
+.product ol {
+    position: relative;
+    
+    color: #d1d5db;
+}
+.product ol li {
+    margin-bottom: 1rem;
+    
+    list-style: decimal inside;
+    color: #d1d5db;
+    font-weight: 600; /* marker:font-semibold */
+}
+.product ol li img {
+    margin-top: 1rem;
+    color: #d1d5db;
+}
+
+.product ul {
+    position: relative;
+    
+    color: #d1d5db;
+}
+.product ul li {
+    margin-bottom: 1rem;
+    
+    list-style: disc inside;
+    color: #d1d5db;
+}
+.product ul li img {
+    margin-top: 1rem;
+    color: #d1d5db;
+}
+
+.blog-short-description p {
+    
+    font-size: 14px;
+    color: #d1d5db; /* text-gray-300 */
+}

@@ -7,7 +7,8 @@ use App\Http\Controllers\{
     OrderController,
     ProductController,
     CatalogController,
-    CartController
+    CartController,
+    PageController
 };
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -50,6 +51,8 @@ Route::prefix('cart')->group(function () {
     Route::post('/remove', [CartController::class, 'remove'])->name('cart.remove');
     Route::get('/summary', [CartController::class, 'summary'])->name('cart.summary');
 });
+
+Route::get('/legal/{page:code}', [PageController::class, 'show'])->name('legal.show');
 
 Route::get('/catalog', fn() => Inertia::render('Catalog'))->name('catalog');
 

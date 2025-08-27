@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use Inertia\Inertia;
+use App\Models\Page;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -21,5 +23,20 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        Inertia::share([
+        
+        'legalPages' => function () {
+            return Page::query()
+                ->orderBy('order')
+                ->get(['id','name','code'])
+                ->map(fn($p) => [
+                    'id'   => $p->id,
+                    'name' => $p->name,
+                    'code' => $p->code,
+                    'url'  => route('legal.show', $p->code),
+                ]);
+        },
+    ]);
     }
 }

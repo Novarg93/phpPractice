@@ -34,6 +34,13 @@ function formatPrice(cents: number) {
 }
 
 
+const legalPages = usePage().props.legalPages as Array<{
+  id: number
+  name: string
+  code: string
+  url: string
+}>
+
 
 const isOpen = ref<boolean>(false);
 
@@ -214,23 +221,11 @@ onMounted(() => loadSummary())
                 </div>
 
                 <div class="flex flex-col gap-2">
-                    <h3 class="font-bold text-lg">Platforms</h3>
-                    <div>
-                        <a href="#" class="opacity-60 hover:opacity-100">
-                            iOS
-                        </a>
-                    </div>
-
-                    <div>
-                        <a href="#" class="opacity-60 hover:opacity-100">
-                            Android
-                        </a>
-                    </div>
-
-                    <div>
-                        <a href="#" class="opacity-60 hover:opacity-100">
-                            Web
-                        </a>
+                    <h3 class="font-bold text-lg">Legal</h3>
+                    <div v-for="p in legalPages" :key="p.id">
+                    <Link :href="p.url" class="opacity-60 hover:opacity-100">
+                        {{ p.name }}
+                    </Link>
                     </div>
                 </div>
 
