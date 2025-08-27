@@ -2,12 +2,13 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import DefaultLayout from '@/Layouts/DefaultLayout.vue';
 import { Head,  Link } from '@inertiajs/vue3';
+
 </script>
 
 <template>
     <Head title="Dashboard" />
 
-    <AuthenticatedLayout>
+    <DefaultLayout>
         <template #header>
             <h2
                 class="text-xl font-semibold leading-tight "
@@ -27,5 +28,5 @@ import { Head,  Link } from '@inertiajs/vue3';
                 </div>
             </div>
         </div>
-    </AuthenticatedLayout>
+    </DefaultLayout>
 </template>

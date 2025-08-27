@@ -4,7 +4,14 @@ import { usePage } from '@inertiajs/vue3'
 import { Link } from '@inertiajs/vue3';
 import { useCartSummary } from '@/composables/useCartSummary'
 import axios from 'axios'
-
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/Components/ui/dropdown-menu'
 import {
     Drawer,
     DrawerClose,
@@ -113,8 +120,8 @@ onMounted(() => loadSummary())
                 </ul>
             </nav>
 
-            <div class="hidden lg:flex pr-2 xl:pr-4 gap-4">
-                <div class="flex items-center gap-2 ">
+            <div class="hidden lg:flex pr-2 xl:pr-4 gap-8">
+                <div class="flex items-center gap-4 ">
                     <span v-if="summary.total_qty">{{ formatPrice(summary.total_sum_cents) }}</span>
                     <a href="/cart" class="relative">
 
@@ -131,27 +138,37 @@ onMounted(() => loadSummary())
                     <Link class="hover:underline " :href="route('register')">Sign Up</Link>
                 </div>
                 <div v-if="$page.props.auth.user" class="flex justify-between items-center">
-                    <Link class="hover:underline " :href="route('dashboard')">
-                    <span class="inline-flex  rounded-md">
-                        <button type="button"
-                            class="inline-flex items-center gap-2 rounded-md border border-transparent px-3 py-2 text-sm font-medium leading-4 transition duration-150 ease-in-out hover:text-gray-100 focus:outline-none">
-                            <template v-if="$page.props.auth.user.avatar">
-                                <img :src="$page.props.auth.user.avatar" alt="Avatar"
-                                    class="h-8 w-8 rounded-full object-cover" />
-                            </template>
-                            <template v-else>
-                                <div
-                                    class="h-8 w-8 rounded-full bg-gray-500 text-white flex items-center justify-center text-sm font-bold">
-                                    {{ $page.props.auth.user.name.charAt(0).toUpperCase() }}
-                                </div>
-                            </template>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger>
+                            <img :src="$page.props.auth.user.avatar" alt="Avatar"
+                                class="h-8 w-8 rounded-full object-cover" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent class="border border-border">
+                            
+                            <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem>
+                                <Link :href="route('dashboard')">Dashboard
+                                </Link>
 
+                            </DropdownMenuItem>
 
+                            <DropdownMenuItem>
+                                <Link :href="route('orders.index')">Orders
+                                </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem>
+                                <Link :href="route('profile.edit')">Settings
+                                </Link>
+                            </DropdownMenuItem>
 
+                            <DropdownMenuItem>
+                                <Link :href="route('logout')" method="post" as="button">Logout
+                                </Link>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
 
-                        </button>
-                    </span>
-                    </Link>
 
                 </div>
 
