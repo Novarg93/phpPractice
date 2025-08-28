@@ -8,7 +8,8 @@ use App\Http\Controllers\{
     ProductController,
     CatalogController,
     CartController,
-    PageController
+    PageController,
+    PostController
 };
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -64,5 +65,9 @@ Route::scopeBindings()->group(function () {
     Route::get('/games/{game:slug}/{category:slug}/{product:slug}', [ProductController::class, 'show'])
         ->scopeBindings()->name('products.show');
 });
+
+
+Route::get('/posts', [PostController::class, 'index'])->name('posts.index');
+Route::get('/posts/{post:slug}', [PostController::class, 'show'])->name('posts.show');
 
 require __DIR__ . '/auth.php';
