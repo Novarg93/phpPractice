@@ -7,7 +7,7 @@ import { useCartSummary } from '@/composables/useCartSummary'
 type ItemOption = { id:number; title:string; price_delta_cents:number }
 type Item = {
   id:number
-  product:{ id:number; name:string; image?:string|null }
+  product:{ id:number; name:string; image_url?:string|null }
   qty:number
   unit_price_cents:number
   line_total_cents:number
@@ -42,14 +42,14 @@ async function goToStripe() {
   <DefaultLayout>
     <section class="w-[90%] 2xl:w-[75%] mx-auto py-8 md:py-12 lg:py-16">
       <h1 class="text-3xl font-semibold mb-6">Checkout</h1>
-
+      
       <div class="grid lg:grid-cols-3 gap-6">
         <div class="lg:col-span-2 space-y-4">
           <div class="border rounded-lg p-4">
             <h2 class="font-semibold mb-3">Items</h2>
 
             <div v-for="i in props.items" :key="i.id" class="flex gap-4 border rounded-md p-3 mb-2">
-              <img v-if="i.product.image" :src="i.product.image" class="w-16 h-16 object-cover rounded" />
+              <img v-if="i.product.image_url" :src="i.product.image_url" class="w-16 h-16 object-cover rounded" />
               <div class="flex-1">
                 <div class="font-medium">{{ i.product.name }}</div>
                 <div class="text-xs text-muted-foreground">Qty: {{ i.qty }}</div>

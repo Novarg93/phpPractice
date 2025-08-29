@@ -20,7 +20,7 @@ type CartItem = {
     product: {
         id: number
         name: string
-        image?: string | null
+        image_url?: string | null
     }
     qty: number
     unit_price_cents: number
@@ -78,10 +78,10 @@ async function removeItem(item: CartItem) {
                 </BreadcrumbList>
             </Breadcrumb>
             <h1 class="text-3xl font-semibold my-6">Your Cart</h1>
-            <pre>{{ items }}</pre>
+            
             <div v-if="items.length" class="space-y-4">
                 <div v-for="item in items" :key="item.id" class="flex items-center gap-4 border rounded-lg p-4">
-                    <img v-if="item.product.image" :src="item.product.image" alt=""
+                    <img v-if="item.product.image_url" :src="item.product.image_url" alt=""
                         class="w-20 h-20 object-cover rounded" />
                     <div class="flex-1">
                         <div class="font-medium">{{ item.product.name }}</div>
@@ -90,9 +90,9 @@ async function removeItem(item: CartItem) {
                         </div>
 
                         <div class="flex items-center gap-2 mt-2">
-                            <button class="px-2 py-1 border rounded" @click="updateQty(item, item.qty - 1)">-</button>
-                            <span>{{ item.qty }}</span>
-                            <button class="px-2 py-1 border rounded" @click="updateQty(item, item.qty + 1)">+</button>
+                            
+                            <span>Quantity: {{ item.qty }}</span>
+                            
                         </div>
                     </div>
 

@@ -30,7 +30,8 @@ class CheckoutController extends Controller
                     'product' => [
                         'id' => $i->product->id,
                         'name' => $i->product->name,
-                        'image' => $i->product->image,
+                        
+                        'image_url' => $i->product->image_url,
                     ],
                     'qty' => $i->qty,
                     'unit_price_cents' => $i->unit_price_cents,

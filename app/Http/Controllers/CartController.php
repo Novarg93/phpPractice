@@ -49,27 +49,66 @@ class CartController extends Controller
 
     private function validateSelection(int $productId, array $optionValueIds): void
     {
-        // Базовая защита: все option_value_ids должны существовать и принадлежать группам этого продукта,
-        // а радиогруппы — не более 1 выбранного, required — соблюдены.
         $product = Product::with('optionGroups.values')->findOrFail($productId);
-        $chosen = collect($optionValueIds);
+        $chosen  = collect($optionValueIds);
 
-        // принадлежность
+        // 1) Все выбранные value должны принадлежать продукту
         foreach ($chosen as $vid) {
             $belongs = $product->optionGroups->first(fn($g) => $g->values->contains('id', $vid));
             abort_unless($belongs, 422, 'Invalid option value selected.');
         }
 
-        // правила групп
+        // 2) Правила по типам
         foreach ($product->optionGroups as $g) {
             $selectedInGroup = $chosen->filter(fn($vid) => $g->values->contains('id', $vid));
-            if ($g->type === OptionGroup::TYPE_RADIO) {
-                if ($selectedInGroup->count() > 1) abort(422, 'Only one option can be selected in "'.$g->title.'".');
-                if ($g->is_required && $selectedInGroup->count() !== 1) abort(422, '"'.$g->title.'" is required.');
-            } else {
-                if ($g->is_required && $selectedInGroup->count() < 1) abort(422, 'Select at least one in "'.$g->title.'".');
+
+            if ($g->type === OptionGroup::TYPE_RADIO || $g->type === 'radio_additive') {
+                if ($selectedInGroup->count() > 1) {
+                    abort(422, 'Only one option can be selected in "' . $g->title . '".');
+                }
+                if ($g->is_required && $selectedInGroup->count() !== 1) {
+                    abort(422, '"' . $g->title . '" is required.');
+                }
+            } elseif ($g->type === OptionGroup::TYPE_CHECKBOX || $g->type === 'checkbox_additive') {
+                if ($g->is_required && $selectedInGroup->count() < 1) {
+                    abort(422, 'Select at least one in "' . $g->title . '".');
+                }
+            } elseif ($g->type === 'quantity_slider') {
+                // Валидация кол-ва делается отдельно (см. ниже). Здесь ничего не проверяем.
+                continue;
             }
         }
+    }
+
+    private function validateAndResolveQty(int $productId, ?int $qtyFromRequest): int
+    {
+        /** @var \App\Models\OptionGroup|null $g */
+        $g = OptionGroup::where('product_id', $productId)
+            ->where('type', 'quantity_slider')
+            ->first();
+
+        if (!$g) {
+            return max(1, (int)($qtyFromRequest ?? 1));
+        }
+
+        $min  = $g->qty_min  ?? 1;
+        $max  = $g->qty_max  ?? PHP_INT_MAX;
+        $step = max(1, (int)($g->qty_step ?? 1));
+        $def  = $g->qty_default ?? $min;
+
+        $q = $qtyFromRequest ?? $def;
+
+        if ($g->is_required && ($q === null)) {
+            abort(422, '"' . $g->title . '" is required.');
+        }
+        if ($q < $min || $q > $max) {
+            abort(422, 'Quantity must be between ' . $min . ' and ' . $max . '.');
+        }
+        if (($q - $min) % $step !== 0) {
+            abort(422, 'Invalid quantity step for "' . $g->title . '".');
+        }
+
+        return (int)$q;
     }
 
     // ===== Pages
@@ -79,9 +118,10 @@ class CartController extends Controller
         if ($this->isGuest($request)) {
             $items = $this->getGuestCart($request);
 
-            $totalQty = collect($items)->sum('qty');
+            $totalQty = count($items);
             $totalSum = collect($items)->sum('line_total_cents');
-
+            $products = \App\Models\Product::whereIn('id', collect($items)->pluck('product_id')->unique())
+                ->get()->keyBy('id');
             return Inertia::render('Cart/Index', [
                 'items' => collect($items)->map(function ($i) {
                     $p = Product::find($i['product_id']);
@@ -90,7 +130,8 @@ class CartController extends Controller
                         'product' => [
                             'id' => $p?->id,
                             'name' => $p?->name ?? 'Unknown',
-                            'image' => $p?->image ?? null,
+
+                            'image_url' => $p?->image_url,
                         ],
                         'qty' => $i['qty'],
                         'unit_price_cents' => $i['unit_price_cents'],
@@ -110,13 +151,14 @@ class CartController extends Controller
                 'product' => [
                     'id' => $item->product->id,
                     'name' => $item->product->name,
-                    'image' => $item->product->image,
+
+                    'image_url' => $item->product->image_url,
                 ],
                 'qty' => $item->qty,
                 'unit_price_cents' => $item->unit_price_cents,
                 'line_total_cents' => $item->line_total_cents,
             ]),
-            'total_qty' => $cart->items->sum('qty'),
+            'total_qty' => $cart->items->count(),
             'total_sum_cents' => $cart->items->sum('line_total_cents'),
         ]);
     }
@@ -126,41 +168,31 @@ class CartController extends Controller
     public function add(Request $request)
     {
         $data = $request->validate([
-            'product_id' => ['required','integer','exists:products,id'],
-            'qty' => ['nullable','integer','min:1'],
+            'product_id' => ['required', 'integer', 'exists:products,id'],
+            'qty' => ['nullable', 'integer', 'min:1'],
             'option_value_ids' => ['array'],
-            'option_value_ids.*' => ['integer','exists:option_values,id'],
+            'option_value_ids.*' => ['integer', 'exists:option_values,id'],
         ]);
 
-        $qty = max(1, (int)($data['qty'] ?? 1));
         $optionIds = $this->normalizeOptionIds($data['option_value_ids'] ?? []);
         $this->validateSelection($data['product_id'], $optionIds);
+
+        // ✅ корректное qty с учётом min/max/step quantity_slider
+        $qty = $this->validateAndResolveQty($data['product_id'], $data['qty'] ?? null);
 
         $unit = $this->computeUnitPriceCents($data['product_id'], $optionIds);
 
         if ($this->isGuest($request)) {
             $items = $this->getGuestCart($request);
 
-            // Если уже есть позиция с тем же продуктом и тем же набором опций — просто увеличим qty
-            $foundIndex = collect($items)->search(function ($i) use ($data, $optionIds, $unit) {
-                return $i['product_id'] === $data['product_id']
-                    && collect($i['option_value_ids'])->sort()->values()->all() === $optionIds
-                    && $i['unit_price_cents'] === $unit;
-            });
-
-            if ($foundIndex !== false) {
-                $items[$foundIndex]['qty'] += $qty;
-                $items[$foundIndex]['line_total_cents'] = $items[$foundIndex]['unit_price_cents'] * $items[$foundIndex]['qty'];
-            } else {
-                $items[] = [
-                    'id' => (string) Str::uuid(),
-                    'product_id' => $data['product_id'],
-                    'qty' => $qty,
-                    'unit_price_cents' => $unit,
-                    'line_total_cents' => $unit * $qty,
-                    'option_value_ids' => $optionIds,
-                ];
-            }
+            $items[] = [
+                'id' => (string) Str::uuid(),
+                'product_id' => $data['product_id'],
+                'qty' => $qty,
+                'unit_price_cents' => $unit,
+                'line_total_cents' => $unit * $qty,
+                'option_value_ids' => $optionIds,
+            ];
 
             $this->saveGuestCart($request, $items);
             return response()->json(['ok' => true]);
@@ -169,29 +201,15 @@ class CartController extends Controller
         // auth user → в БД
         $cart = $this->getUserCart($request);
 
-        // пробуем слить одинаковые позиции
-        $existing = $cart->items()
-            ->where('product_id', $data['product_id'])
-            ->get()
-            ->first(function ($item) use ($optionIds, $unit) {
-                $ids = $item->options()->pluck('option_value_id')->sort()->values()->all();
-                return $ids === $optionIds && $item->unit_price_cents === $unit;
-            });
+        $new = $cart->items()->create([
+            'product_id' => $data['product_id'],
+            'qty' => $qty,
+            'unit_price_cents' => $unit,
+            'line_total_cents' => $unit * $qty,
+        ]);
 
-        if ($existing) {
-            $existing->qty += $qty;
-            $existing->line_total_cents = $existing->unit_price_cents * $existing->qty;
-            $existing->save();
-        } else {
-            $new = $cart->items()->create([
-                'product_id' => $data['product_id'],
-                'qty' => $qty,
-                'unit_price_cents' => $unit,
-                'line_total_cents' => $unit * $qty,
-            ]);
-            foreach ($optionIds as $vid) {
-                $new->options()->create(['option_value_id' => $vid]);
-            }
+        foreach ($optionIds as $vid) {
+            $new->options()->create(['option_value_id' => $vid]);
         }
 
         return response()->json(['ok' => true]);
@@ -201,7 +219,7 @@ class CartController extends Controller
     {
         $data = $request->validate([
             'item_id' => ['required'],
-            'qty' => ['required','integer','min:1'],
+            'qty' => ['required', 'integer', 'min:1'],
         ]);
 
         if ($this->isGuest($request)) {
@@ -247,14 +265,15 @@ class CartController extends Controller
         if ($this->isGuest($request)) {
             $items = $this->getGuestCart($request);
             return [
-                'total_qty' => collect($items)->sum('qty'),
+                // было: sum('qty')
+                'total_qty' => count($items),            // ✅ количество позиций (lines)
                 'total_sum_cents' => collect($items)->sum('line_total_cents'),
             ];
         }
 
         $cart = $this->getUserCart($request)->load('items');
         return [
-            'total_qty' => $cart->items->sum('qty'),
+            'total_qty' => $cart->items->count(),       // ✅ количество позиций (lines)
             'total_sum_cents' => $cart->items->sum('line_total_cents'),
         ];
     }

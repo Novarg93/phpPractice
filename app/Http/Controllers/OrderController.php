@@ -31,7 +31,7 @@ class OrderController extends Controller
     public function show(Order $order)
     {
         $this->authorize('view', $order); 
-        $order->load('items');
+        $order->load('items.product');
 
         return Inertia::render('Profile/Orders/Show', [
             'order' => [
@@ -39,10 +39,11 @@ class OrderController extends Controller
                 'status' => $order->status,
                 'placed_at' => optional($order->placed_at)->toDateTimeString(),
                 'total_cents' => $order->total_cents,
-                'currency' => $order->currency,
+                'currency' => $order->currency,                
                 'shipping_address' => $order->shipping_address,
                 'items' => $order->items->map(fn($i) => [
                     'product_name' => $i->product_name,
+                    'image_url'=> $i->product?->image_url,
                     'qty' => $i->qty,
                     'unit_price_cents' => $i->unit_price_cents,
                     'line_total_cents' => $i->line_total_cents,
