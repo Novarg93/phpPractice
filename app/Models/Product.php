@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Filesystem\FilesystemAdapter;
 
 
 class Product extends Model
@@ -32,6 +33,13 @@ class Product extends Model
         'meta' => 'array',
     ];
 
+    protected $appends = ['image_url'];
+
+    public function getImageUrlAttribute(): ?string
+{
+    return $this->image ? Storage::url($this->image) : null;
+}
+
     // старая «главная категория»
     public function category(): BelongsTo
     {
@@ -39,15 +47,15 @@ class Product extends Model
     }
 
     protected static function booted()
-{
-    static::saved(function (Product $product) {
-        if ($product->category_id) {
-            $product->categories()->syncWithoutDetaching([
-                $product->category_id => ['is_primary' => true],
-            ]);
-        }
-    });
-}
+    {
+        static::saved(function (Product $product) {
+            if ($product->category_id) {
+                $product->categories()->syncWithoutDetaching([
+                    $product->category_id => ['is_primary' => true],
+                ]);
+            }
+        });
+    }
 
     // новая many-to-many
     public function categories(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
@@ -59,12 +67,15 @@ class Product extends Model
 
     protected function image(): Attribute
     {
-        return Attribute::get(
-            fn($value) => $value
-                ? (str_starts_with($value, 'http') || str_starts_with($value, '/')
-                    ? $value
-                    : Storage::url($value))
-                : null
+        return Attribute::make(
+            // При получении из БД — просто отдай как есть (относительный путь)
+            get: fn($value) => $value,
+
+            // При сохранении — отрежь префикс /storage/
+            set: fn($value) =>
+            $value
+                ? ltrim(str_replace('/storage/', '', $value), '/')
+                : null,
         );
     }
 
@@ -84,7 +95,7 @@ class Product extends Model
             $q->where('track_inventory', false)->orWhere('stock', '>=', $qty);
         });
     }
-     public function optionGroups(): HasMany
+    public function optionGroups(): HasMany
     {
         return $this->hasMany(OptionGroup::class)->orderBy('position');
     }

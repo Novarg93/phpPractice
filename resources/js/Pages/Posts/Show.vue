@@ -48,7 +48,7 @@ const props = defineProps<{
         />
 
         <!-- content -->
-        <div class="legal prose-invert max-w-none" v-html="props.post.content" />
+        <div class="legal  max-w-none" v-html="props.post.content" />
       </article>
     </section>
   </DefaultLayout>

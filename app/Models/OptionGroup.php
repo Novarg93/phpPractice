@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class OptionGroup extends Model
 {
-    protected $fillable = ['product_id', 'title', 'type', 'is_required', 'position'];
+    protected $fillable = ['product_id', 'title', 'type', 'is_required', 'position','slider_min','slider_max','slider_step','slider_default', 'multiply_by_qty'];
 
     public const TYPE_RADIO   = 'radio_additive';    // DefaultRadiobuttonAdditive
     public const TYPE_CHECKBOX = 'checkbox_additive'; // DefaultCheckboxAdditive
+    public const TYPE_SLIDER   = 'quantity_slider';
 
     public function product(): BelongsTo
     {
@@ -23,6 +24,11 @@ class OptionGroup extends Model
         return $this->hasMany(OptionValue::class)->orderBy('position');
     }
 
+     protected $casts = [
+        'is_required'      => 'bool',
+        'multiply_by_qty'  => 'bool', // 👈
+    ];
+    
     protected static function booted()
     {
         static::saved(function (OptionGroup $group) {

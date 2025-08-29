@@ -32,7 +32,7 @@ function formatPrice(cents:number) {
       <!-- breadcrumbs -->
        
        <Breadcrumbs :game="game" :category="category" />
-
+      
       <!-- header -->
       <header class="my-6">
         <h1 class="text-3xl font-semibold">
@@ -62,7 +62,7 @@ function formatPrice(cents:number) {
             class="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-accent"
             :class="category?.id === c.id ? 'bg-primary text-primary-foreground border-transparent' : ''"
           >
-            <img v-if="c.image" :src="c.image" class="w-6 h-6 rounded object-cover text-white border-0" alt="">
+            <img v-if="c.image_url" :src="c.image_url" class="w-6 h-6 rounded object-cover text-white border-0" alt="">
             <span class="flex-1">{{ c.name }}</span>
             <span class="text-xs opacity-70">{{ c.products_count }}</span>
           </Link>
@@ -72,7 +72,7 @@ function formatPrice(cents:number) {
         <main class="col-span-12 md:col-span-9">
           <div class="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             <article v-for="p in products.data" :key="p.id" class="border border-border rounded-xl p-3 hover:shadow transition">
-              <img v-if="p.image" :src="p.image" class="w-full h-36 object-cover object-top  rounded-lg mb-2" />
+              <img v-if="p.image_url" :src="p.image_url" class="w-full h-36 object-cover object-top  rounded-lg mb-2" />
               <h3 class="font-medium line-clamp-2">{{ p.name }}</h3>
               <div class="text-sm text-muted-foreground line-clamp-2">{{ p.short }}</div>
               <div class="mt-2 font-semibold">{{ formatPrice(p.price_cents) }}</div>

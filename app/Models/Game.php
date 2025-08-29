@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\Storage;
 
 class Game extends Model
 {
-    protected $fillable = ['name','slug','description','image_url'];
+    protected $fillable = ['name','slug','description','image'];
+     protected $appends = ['image_url'];
 
     public function categories(): HasMany
     {
@@ -24,14 +25,18 @@ class Game extends Model
 
     // Аксессор для автоматического преобразования image_url → полный URL
     protected function imageUrl(): Attribute
-    {
-        return Attribute::get(function ($value) {
-            if (!$value) return null;
-            if (str_starts_with($value, 'http') || str_starts_with($value, '/')) {
-                return $value;
-            }
-            return Storage::url($value); // превратит "games/xxx.jpg" → "/storage/games/xxx.jpg"
-        });
-    }
+{
+    return Attribute::get(
+        fn ($value, $attributes) =>
+            (!empty($attributes['image']))
+                ? (
+                    str_starts_with($attributes['image'], 'http')
+                    || str_starts_with($attributes['image'], '/')
+                        ? $attributes['image']
+                        : \Illuminate\Support\Facades\Storage::url($attributes['image'])
+                )
+                : null
+    );
+}
 }
 

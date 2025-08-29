@@ -9,6 +9,6 @@ export type Category = {
   name: string;
   slug: string;
   type: string;
-  image?: string | null;
+  image_url?: string | null;
   products_count?: number;
 };

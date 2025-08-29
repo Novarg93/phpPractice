@@ -116,21 +116,37 @@
 }
 
 .legal ul {
-    position: relative;
-    margin-bottom: 1rem;
-    margin-left: 1rem;
-    
-    color: #d1d5db;
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;       /* вместо margin-left */
 }
+
 .legal ul li {
-    margin-bottom: 1rem;
-    margin-left: 1rem;
-    list-style: disc inside;
-    color: #d1d5db;
+  list-style: disc;            /* тип маркера */
+  list-style-position: outside;/* маркер снаружи — не ломает строку */
+  margin: 0 0 .75rem 0;
 }
-.legal ul li img {
-    margin-top: 1rem;
-    color: #d1d5db;
+
+/* чтобы <p> не переносил строку внутри <li> */
+.legal ul li > p {
+  display: inline;
+  margin: 0;
+}
+
+.legal ol {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;       /* вместо margin-left */
+}
+
+.legal ol li {
+  list-style: disc;            /* тип маркера */
+  list-style-position: outside;/* маркер снаружи — не ломает строку */
+  margin: 0 0 .75rem 0;
+}
+
+/* чтобы <p> не переносил строку внутри <li> */
+.legal ol li > p {
+  display: inline;
+  margin: 0;
 }
 
 

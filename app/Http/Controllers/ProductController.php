@@ -33,20 +33,33 @@ class ProductController extends Controller
                 'track_inventory' => $product->track_inventory,
                 'stock' => $product->stock,
                 'image' => $product->image,
+                'image_url' => $product->image_url,
                 'short' => $product->short,
                 'description' => $product->description,
+
+
+
+
                 // вот тут отдадим опции
                 'option_groups' => $product->optionGroups->map(fn($g) => [
                     'id' => $g->id,
                     'title' => $g->title,
-                    'type' => $g->type, 
-                    'is_required' => (bool)$g->is_required,
-                    'values' => $g->values->map(fn($v) => [
+                    'type' => $g->type,
+                    'is_required' => (bool) $g->is_required,
+                    'multiply_by_qty' => (bool) $g->multiply_by_qty,
+                    'qty_min'     => $g->slider_min ?? 1,
+                    'qty_max'     => max($g->slider_min ?? 1, $g->slider_max ?? 1),
+                    'qty_step'    => max(1, (int)($g->slider_step ?? 1)),
+                    'qty_default' => $g->slider_default ?? ($g->slider_min ?? 1),
+                    'values' => in_array($g->type, [
+                        \App\Models\OptionGroup::TYPE_RADIO,
+                        \App\Models\OptionGroup::TYPE_CHECKBOX,
+                    ]) ? $g->values->map(fn($v) => [
                         'id' => $v->id,
                         'title' => $v->title,
-                        'price_delta_cents' => (int)$v->price_delta_cents,
-                        'is_default' => (bool)$v->is_default, 
-                    ])->values(),
+                        'price_delta_cents' => (int) $v->price_delta_cents,
+                        'is_default' => (bool) $v->is_default,
+                    ])->values() : [],
                 ])->values(),
             ],
         ]);

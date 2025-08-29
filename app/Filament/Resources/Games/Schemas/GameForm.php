@@ -31,17 +31,17 @@ class GameForm
                 Textarea::make('description')
                     ->columnSpanFull(),
 
-                FileUpload::make('image_url')
+                FileUpload::make('image')
                     ->label('Image')
-                    ->disk('public')           // ⬅️ сохраняем на диск public
-                    ->directory('games')       // ⬅️ файлы пойдут в storage/app/public/games
-                    ->visibility('public')     // ⬅️ будут доступны по /storage/...
+                    ->disk('public')
+                    ->directory('games')
+                    ->visibility('public')
                     ->image()
                     ->previewable(true)
                     ->openable()
                     ->downloadable()
                     ->acceptedFileTypes(['image/png', 'image/jpeg', 'image/webp'])
-                    ->maxSize(4096)            // до 4 МБ
+                    ->maxSize(4096)
                     ->nullable(),
             ]);
     }

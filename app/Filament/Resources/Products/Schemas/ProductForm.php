@@ -4,7 +4,7 @@ namespace App\Filament\Resources\Products\Schemas;
 
 use Filament\Schemas\Schema;
 
-// 👉 ЯВНО алиасим формы-компоненты (чтобы не путаться со Schemas-компонентами)
+// формы-компоненты
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
@@ -12,9 +12,11 @@ use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
 use Filament\Schemas\Components\Section as UiSection;
-
+use Illuminate\Support\Facades\Storage;
+use Filament\Forms\Get;
 use Illuminate\Support\Str;
 use App\Models\Category;
+use App\Models\OptionGroup; // 👈 удобно заимпортить
 
 class ProductForm
 {
@@ -44,29 +46,34 @@ class ProductForm
                     ->helperText('Выберите дополнительные категории, кроме основной'),
 
                 TextInput::make('name')
-                    ->required()->maxLength(255)
+                    ->required()
+                    ->maxLength(255)
                     ->live(debounce: 300)
-                    ->afterStateUpdated(
-                        fn($state, callable $set) =>
-                        $set('slug', Str::slug((string) $state))
-                    ),
+                    ->afterStateUpdated(fn($state, callable $set) => $set('slug', Str::slug((string) $state))),
 
                 TextInput::make('slug')
-                    ->required()->maxLength(120)
+                    ->required()
+                    ->maxLength(120)
                     ->unique(ignoreRecord: true),
 
                 TextInput::make('sku')->maxLength(64),
 
                 TextInput::make('price_cents')
                     ->label('Price (cents)')
-                    ->numeric()->minValue(0)->required(),
+                    ->numeric()
+                    ->minValue(0)
+                    ->required(),
 
                 Toggle::make('is_active')->default(true),
-                Toggle::make('track_inventory')->default(false),
+                Toggle::make('track_inventory')
+                    ->default(false)
+                    ->live(),
 
                 TextInput::make('stock')
-                    ->numeric()->minValue(0)->nullable()
-                    ->disabled(fn($get) => $get('track_inventory') === false),
+                    ->numeric()
+                    ->minValue(0)
+                    ->nullable()
+                    ->disabled(fn(callable $get): bool => ! $get('track_inventory')),
 
                 FileUpload::make('image')
                     ->label('Image')
@@ -80,7 +87,6 @@ class ProductForm
                 Textarea::make('short')->rows(2)->columnSpanFull(),
                 Textarea::make('description')->rows(6)->columnSpanFull(),
 
-                // ⬇️ Секция опций — используем алиас FormsSection
                 UiSection::make('Options')
                     ->columnSpan(['lg' => 2])
                     ->description('Группы опций и варианты с аддитивной ценой')
@@ -90,10 +96,8 @@ class ProductForm
                             ->orderColumn('position')
                             ->defaultItems(0)
                             ->collapsed()
+                            ->columns(12) // сетка для верхнего блока группы
                             ->schema([
-                                // === Верхний блок группы ===
-                                // Делаем сетку на 12 колонок и задаём доли
-                                // title: 6, type: 4, required: 2
                                 TextInput::make('title')
                                     ->label('Group title')
                                     ->required()
@@ -102,11 +106,13 @@ class ProductForm
                                 Select::make('type')
                                     ->label('Type')
                                     ->options([
-                                        \App\Models\OptionGroup::TYPE_RADIO    => 'DefaultRadiobuttonAdditive',
-                                        \App\Models\OptionGroup::TYPE_CHECKBOX => 'DefaultCheckboxAdditive',
+                                        OptionGroup::TYPE_RADIO    => 'DefaultRadiobuttonAdditive',
+                                        OptionGroup::TYPE_CHECKBOX => 'DefaultCheckboxAdditive',
+                                        OptionGroup::TYPE_SLIDER   => 'QuantitySlider', // 👈 новый тип
                                     ])
                                     ->native(false)
                                     ->required()
+                                    ->live()
                                     ->columnSpan(4),
 
                                 Toggle::make('is_required')
@@ -114,13 +120,45 @@ class ProductForm
                                     ->inline(false)
                                     ->columnSpan(2),
 
-                                // === Список значений ===
+                                Toggle::make('multiply_by_qty')
+                                    ->label('Multiply by quantity')
+                                    ->helperText('Если включено — надбавка опции умножается на qty. Если выключено — добавляется один раз за заказ.')
+                                    ->visible(fn(callable $get) => $get('type') !== OptionGroup::TYPE_SLIDER)
+                                    ->default(false)
+                                    ->columnSpan(4),
+
+                                // ===== Поля слайдера (только для quantity_slider) =====
+                                TextInput::make('slider_min')
+                                    ->label('Min')
+                                    ->numeric()->minValue(1)
+                                    ->required(fn(callable $get) => $get('type') === \App\Models\OptionGroup::TYPE_SLIDER)
+                                    ->visible(fn(callable $get) => $get('type') === \App\Models\OptionGroup::TYPE_SLIDER),
+
+                                TextInput::make('slider_max')
+                                    ->label('Max')
+                                    ->numeric()->minValue(1)
+                                    ->required(fn(callable $get) => $get('type') === \App\Models\OptionGroup::TYPE_SLIDER)
+                                    ->visible(fn(callable $get) => $get('type') === \App\Models\OptionGroup::TYPE_SLIDER),
+
+                                TextInput::make('slider_step')
+                                    ->label('Step')
+                                    ->numeric()->minValue(1)
+                                    ->required(fn(callable $get) => $get('type') === \App\Models\OptionGroup::TYPE_SLIDER)
+                                    ->visible(fn(callable $get) => $get('type') === \App\Models\OptionGroup::TYPE_SLIDER),
+
+                                TextInput::make('slider_default')
+                                    ->label('Default')
+                                    ->numeric()->minValue(1)
+                                    ->required(fn(callable $get) => $get('type') === \App\Models\OptionGroup::TYPE_SLIDER)
+                                    ->visible(fn(callable $get) => $get('type') === \App\Models\OptionGroup::TYPE_SLIDER),
+
                                 Repeater::make('values')
                                     ->relationship()
                                     ->orderColumn('position')
                                     ->defaultItems(0)
                                     ->collapsed()
                                     ->columns(12)
+                                    ->visible(fn(callable $get) => $get('type') !== \App\Models\OptionGroup::TYPE_SLIDER) // 👈
                                     ->schema([
                                         TextInput::make('title')
                                             ->label('Option title')
@@ -146,10 +184,8 @@ class ProductForm
                                             ->inline(false)
                                             ->columnSpan(2),
                                     ])
-                                    ->columnSpanFull()
-                            ])
-                            // включаем 12-колоночную сетку и для верхнего блока группы
-                            ->columns(12),
+                                    ->columnSpanFull(),
+                            ]),
                     ]),
             ]);
     }
