@@ -25,6 +25,7 @@ type CartItem = {
     qty: number
     unit_price_cents: number
     line_total_cents: number
+    range_labels?: string[]
 }
 
 const props = defineProps<{
@@ -56,10 +57,21 @@ async function updateQty(item: CartItem, newQty: number) {
 }
 
 async function removeItem(item: CartItem) {
-    await axios.post('/cart/remove', { item_id: item.id })
-    items.value = items.value.filter(i => i.id !== item.id)
-    recalc()
-    await loadSummary()
+    try {
+        const { data } = await axios.post('/cart/remove', { item_id: item.id })
+
+        items.value = items.value.filter(i => i.id !== item.id)
+        recalc()
+
+        if (data && data.summary) {
+            summary.value = data.summary
+        } else {
+            await loadSummary()
+        }
+    } catch (e) {
+        console.error('removeItem failed', e)
+        await loadSummary()
+    }
 }
 </script>
 
@@ -85,14 +97,17 @@ async function removeItem(item: CartItem) {
                         class="w-20 h-20 object-cover rounded" />
                     <div class="flex-1">
                         <div class="font-medium">{{ item.product.name }}</div>
+                        <div v-if="item.range_labels && item.range_labels.length" class="text-sm">
+                            {{ item.range_labels.join(', ') }}
+                        </div>
                         <div class="text-sm text-muted-foreground">
                             {{ formatPrice(item.unit_price_cents) }} / each
                         </div>
 
                         <div class="flex items-center gap-2 mt-2">
-                            
+
                             <span>Quantity: {{ item.qty }}</span>
-                            
+
                         </div>
                     </div>
 
@@ -104,8 +119,9 @@ async function removeItem(item: CartItem) {
 
                 <template v-if="$page.props.auth?.user">
                     <div class="flex justify-end">
-                        <Link :href="route('checkout.index')" class="mt-3 px-4 py-2 bg-primary text-primary-foreground  rounded-lg">
-                            Checkout
+                        <Link :href="route('checkout.index')"
+                            class="mt-3 px-4 py-2 bg-primary text-primary-foreground  rounded-lg">
+                        Checkout
                         </Link>
                     </div>
 

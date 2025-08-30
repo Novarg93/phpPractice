@@ -5,11 +5,19 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Str;
-use App\Models\{Cart, CartItem, CartItemOption, Product, OptionValue, OptionGroup};
+use App\Models\{
+    Cart,
+    CartItem,
+    CartItemOption,
+
+    Product,
+    OptionValue,
+    OptionGroup
+};
 
 class CartController extends Controller
 {
-    // ===== Helpers
+    /* ====================== Helpers: common ====================== */
 
     private function isGuest(Request $r): bool
     {
@@ -21,10 +29,6 @@ class CartController extends Controller
         return Cart::firstOrCreate(['user_id' => $r->user()->id]);
     }
 
-    // Session cart structure:
-    // session('guest_cart') = [
-    //   ['id' => 'uuid', 'product_id' => 1, 'qty' => 2, 'unit_price_cents' => 1234, 'line_total_cents' => 2468, 'option_value_ids' => [5,9]]
-    // ]
     private function getGuestCart(Request $r): array
     {
         return $r->session()->get('guest_cart', []);
@@ -35,56 +39,239 @@ class CartController extends Controller
         $r->session()->put('guest_cart', array_values($items));
     }
 
-    private function computeUnitPriceCents(int $productId, array $optionValueIds): int
-    {
-        $product = Product::findOrFail($productId);
-        $deltaSum = OptionValue::whereIn('id', $optionValueIds)->sum('price_delta_cents');
-        return $product->price_cents + $deltaSum;
-    }
-
     private function normalizeOptionIds($ids): array
     {
         return collect($ids ?? [])->unique()->sort()->values()->all();
     }
 
+    private function productWithGroups(int $productId): Product
+    {
+        return Product::with(['optionGroups.values'])->findOrFail($productId);
+    }
+
+    /* ====================== Helpers: pricing ====================== */
+
+    /** price = base + additive options (per-unit) + range delta (per-unit) */
+    private function computeUnitPriceCents(int $productId, array $optionValueIds, array $rangeSelections): int
+    {
+        $product = $this->productWithGroups($productId);
+
+        // 1) базовая цена
+        $base = $product->price_cents;
+
+        // 2) надбавки по value (radio/checkbox), НО только те, что multiply_by_qty=true
+        $deltaValuesPerUnit = 0;
+        $valueRows = OptionValue::whereIn('id', $optionValueIds)->get();
+        foreach ($product->optionGroups as $g) {
+            if (!in_array($g->type, [OptionGroup::TYPE_RADIO, OptionGroup::TYPE_CHECKBOX], true)) {
+                continue;
+            }
+            if (!$g->multiply_by_qty) {
+                continue; // эти прибавим к заказу, не к юниту
+            }
+            // соберём values для этой группы
+            $valueRows->each(function ($v) use (&$deltaValuesPerUnit, $g) {
+                if ($v->option_group_id === $g->id) {
+                    $deltaValuesPerUnit += (int)$v->price_delta_cents;
+                }
+            });
+        }
+
+        // 3) надбавка по double_range_slider (пер-юнитная)
+        $deltaRangePerUnit = $this->computeRangePerUnitDelta($product, $rangeSelections);
+
+        return $base + $deltaValuesPerUnit + $deltaRangePerUnit;
+    }
+
+    /** piecewise / highest / weighted */
+    private function computeRangePerUnitDelta(Product $product, array $rangeSelections): int
+    {
+        $sum = 0;
+
+        // ожидаем массив элементов: ['option_group_id'=>int, 'selected_min'=>int, 'selected_max'=>int]
+        foreach ($rangeSelections as $sel) {
+            $g = $product->optionGroups
+                ->first(fn($gg) => $gg->id === (int)$sel['option_group_id'] && $gg->type === OptionGroup::TYPE_RANGE);
+
+            if (!$g) continue;
+
+            $min = max((int)$g->slider_min, (int)$sel['selected_min']);
+            $max = min((int)$g->slider_max, (int)$sel['selected_max']);
+            $step = max(1, (int)$g->slider_step);
+
+            // нормализуем и снапаем
+            $min = $this->snapToStep($min, (int)$g->slider_min, $step);
+            $max = $this->snapToStep($max, (int)$g->slider_min, $step);
+            if ($min > $max) [$min, $max] = [$max, $min];
+
+            // шаги считаем как "сколько уровней пройти" (exclusive min)
+            $span = max(0, $max - $min);
+
+            if ($span === 0) {
+                $sum += 0;
+                continue;
+            }
+
+            $pricingMode = $g->pricing_mode ?? 'flat';
+
+            if ($pricingMode === 'flat') {
+                $unit = (int)($g->unit_price_cents ?? 0);
+                $sum += $this->applyBlocksAndCaps($span, $unit, [
+                    'min_block' => null,
+                    'multiplier' => null,
+                    'cap_cents' => null,
+                ]);
+            } elseif ($pricingMode === 'tiered') {
+                $tiers = is_array($g->tiers_json)
+                    ? $g->tiers_json
+                    : (json_decode((string) $g->tiers_json, true) ?: []);
+                $strategy = $g->tier_combine_strategy ?: 'sum_piecewise';
+                $baseFee = (int)($g->base_fee_cents ?? 0);
+                $maxSpan = $g->max_span ? (int)$g->max_span : null;
+
+                if ($maxSpan !== null && $span > $maxSpan) {
+                    abort(422, 'Selected range exceeds maximum allowed span.');
+                }
+
+                $sum += $baseFee;
+                $sum += $this->priceTiered($min, $max, $g->slider_min, $tiers, $strategy);
+            }
+        }
+
+        return (int)$sum;
+    }
+
+    /** piecewise ценообразование по тировым интервалам */
+    private function priceTiered(int $selMin, int $selMax, int $baseMin, array $tiers, string $strategy): int
+    {
+        // нормализуем тиеры: сортировка по from, clamp
+        $tiers = collect($tiers)
+            ->map(function ($t) {
+                return [
+                    'from'             => (int)($t['from'] ?? 0),
+                    'to'               => (int)($t['to'] ?? 0),
+                    'unit_price_cents' => (int)($t['unit_price_cents'] ?? 0),
+                    'min_block'        => isset($t['min_block']) ? (int)$t['min_block'] : null,
+                    'multiplier'       => isset($t['multiplier']) ? (float)$t['multiplier'] : null,
+                    'cap_cents'        => isset($t['cap_cents']) ? (int)$t['cap_cents'] : null,
+                ];
+            })
+            ->sortBy('from')
+            ->values()
+            ->all();
+
+        $spanTotal = max(0, $selMax - $selMin);
+
+        if ($spanTotal === 0) return 0;
+
+        // Посчитаем долю по каждому тиру
+        $piecewise = 0;
+        $highestUnit = 0;
+        $weightedSum = 0;
+
+        foreach ($tiers as $t) {
+            $from = max($t['from'], $selMin);
+            $to   = min($t['to'],   $selMax);
+            if ($to <= $from) continue;
+
+            $steps = $to - $from; // exclusive min
+
+            $unit = $t['unit_price_cents'];
+            if ($t['multiplier']) {
+                $unit = (int)round($unit * (float)$t['multiplier']);
+            }
+
+            // min_block — округляем до кратности блока вверх
+            if ($t['min_block']) {
+                $steps = (int)ceil($steps / (int)$t['min_block']) * (int)$t['min_block'];
+            }
+
+            $cost = $unit * $steps;
+            if ($t['cap_cents'] !== null) {
+                $cost = min($cost, (int)$t['cap_cents']);
+            }
+
+            $piecewise += $cost;
+            $highestUnit = max($highestUnit, $unit);
+            $weightedSum += $unit * ($to - $from);
+        }
+
+        return match ($strategy) {
+            'highest_tier_only' => $highestUnit * $spanTotal,
+            'weighted_average'  => (int)round(($spanTotal > 0 ? $weightedSum / $spanTotal : 0) * $spanTotal),
+            default             => $piecewise, // sum_piecewise
+        };
+    }
+
+    private function snapToStep(int $val, int $base, int $step): int
+    {
+        $off = ($val - $base) % $step;
+        return $val - $off;
+    }
+
+    private function applyBlocksAndCaps(int $steps, int $unit, array $opts): int
+    {
+        $minBlock = $opts['min_block'] ?? null;
+        $mult     = $opts['multiplier'] ?? null;
+        $cap      = $opts['cap_cents'] ?? null;
+
+        if ($minBlock) {
+            $steps = (int)ceil($steps / (int)$minBlock) * (int)$minBlock;
+        }
+        if ($mult) {
+            $unit = (int)round($unit * (float)$mult);
+        }
+        $cost = $unit * $steps;
+        if ($cap !== null) {
+            $cost = min($cost, (int)$cap);
+        }
+        return $cost;
+    }
+
+    private function summaryPayload(Request $request): array
+    {
+        // можно вызвать существующий метод summary() и получить массив
+        return app()->call([$this, 'summary'], ['request' => $request]);
+    }
+
+
+    /* ====================== Helpers: validation ====================== */
+
     private function validateSelection(int $productId, array $optionValueIds): void
     {
-        $product = Product::with('optionGroups.values')->findOrFail($productId);
+        $product = $this->productWithGroups($productId);
         $chosen  = collect($optionValueIds);
 
-        // 1) Все выбранные value должны принадлежать продукту
+        // (A) каждый value — относится к продукту
         foreach ($chosen as $vid) {
             $belongs = $product->optionGroups->first(fn($g) => $g->values->contains('id', $vid));
             abort_unless($belongs, 422, 'Invalid option value selected.');
         }
 
-        // 2) Правила по типам
+        // (B) правила по типам
         foreach ($product->optionGroups as $g) {
-            $selectedInGroup = $chosen->filter(fn($vid) => $g->values->contains('id', $vid));
-
-            if ($g->type === OptionGroup::TYPE_RADIO || $g->type === 'radio_additive') {
-                if ($selectedInGroup->count() > 1) {
+            if ($g->type === OptionGroup::TYPE_RADIO) {
+                $selected = $chosen->filter(fn($vid) => $g->values->contains('id', $vid));
+                if ($selected->count() > 1) {
                     abort(422, 'Only one option can be selected in "' . $g->title . '".');
                 }
-                if ($g->is_required && $selectedInGroup->count() !== 1) {
+                if ($g->is_required && $selected->count() !== 1) {
                     abort(422, '"' . $g->title . '" is required.');
                 }
-            } elseif ($g->type === OptionGroup::TYPE_CHECKBOX || $g->type === 'checkbox_additive') {
-                if ($g->is_required && $selectedInGroup->count() < 1) {
+            } elseif ($g->type === OptionGroup::TYPE_CHECKBOX) {
+                $selected = $chosen->filter(fn($vid) => $g->values->contains('id', $vid));
+                if ($g->is_required && $selected->count() < 1) {
                     abort(422, 'Select at least one in "' . $g->title . '".');
                 }
-            } elseif ($g->type === 'quantity_slider') {
-                // Валидация кол-ва делается отдельно (см. ниже). Здесь ничего не проверяем.
-                continue;
             }
+            // quantity_slider и double_range_slider валидируем отдельно (ниже)
         }
     }
 
     private function validateAndResolveQty(int $productId, ?int $qtyFromRequest): int
     {
-        /** @var \App\Models\OptionGroup|null $g */
         $g = OptionGroup::where('product_id', $productId)
-            ->where('type', 'quantity_slider')
+            ->where('type', OptionGroup::TYPE_SLIDER)
             ->first();
 
         if (!$g) {
@@ -95,8 +282,7 @@ class CartController extends Controller
         $max  = $g->qty_max  ?? PHP_INT_MAX;
         $step = max(1, (int)($g->qty_step ?? 1));
         $def  = $g->qty_default ?? $min;
-
-        $q = $qtyFromRequest ?? $def;
+        $q    = $qtyFromRequest ?? $def;
 
         if ($g->is_required && ($q === null)) {
             abort(422, '"' . $g->title . '" is required.');
@@ -107,11 +293,72 @@ class CartController extends Controller
         if (($q - $min) % $step !== 0) {
             abort(422, 'Invalid quantity step for "' . $g->title . '".');
         }
-
         return (int)$q;
     }
 
-    // ===== Pages
+    private function validateRangeSelections(int $productId, array $rangeSelections): array
+    {
+        $product = $this->productWithGroups($productId);
+
+        // нормализуем массив (мог прийти null/пустой)
+        $list = collect($rangeSelections ?? [])
+            ->map(function ($row) {
+                return [
+                    'option_group_id' => (int)($row['option_group_id'] ?? 0),
+                    'selected_min'    => (int)($row['selected_min'] ?? 0),
+                    'selected_max'    => (int)($row['selected_max'] ?? 0),
+                ];
+            })
+            ->values();
+
+        // пробежимся по всем range-группам продукта
+        foreach ($product->optionGroups as $g) {
+            if ($g->type !== OptionGroup::TYPE_RANGE) continue;
+
+            $sel = $list->firstWhere('option_group_id', $g->id);
+
+            if ($g->is_required && !$sel) {
+                abort(422, '"' . $g->title . '" is required.');
+            }
+            if (!$sel) continue;
+
+            $min = (int)$g->slider_min;
+            $max = (int)$g->slider_max;
+            $step = max(1, (int)$g->slider_step);
+
+            // границы
+            if (
+                $sel['selected_min'] < $min || $sel['selected_min'] > $max ||
+                $sel['selected_max'] < $min || $sel['selected_max'] > $max
+            ) {
+                abort(422, 'Selected range for "' . $g->title . '" is out of bounds.');
+            }
+
+            // снап к шагу (проверка)
+            if ((($sel['selected_min'] - $min) % $step) !== 0 ||
+                (($sel['selected_max'] - $min) % $step) !== 0
+            ) {
+                abort(422, 'Invalid step for "' . $g->title . '".');
+            }
+
+            // пустой диапазон ок (0), но если бизнес-требование: запретить, раскомментируй
+            // if ($sel['selected_max'] <= $sel['selected_min']) {
+            //     abort(422, 'Invalid range for "'.$g->title.'".');
+            // }
+
+            // ограничение по max_span (если настроено)
+            if ($g->pricing_mode === 'tiered' && $g->max_span) {
+                $span = max(0, $sel['selected_max'] - $sel['selected_min']);
+                if ($span > (int)$g->max_span) {
+                    abort(422, 'Selected range exceeds maximum span for "' . $g->title . '".');
+                }
+            }
+        }
+
+        return $list->all();
+    }
+
+    /* ====================== Pages ====================== */
 
     public function index(Request $request)
     {
@@ -120,22 +367,29 @@ class CartController extends Controller
 
             $totalQty = count($items);
             $totalSum = collect($items)->sum('line_total_cents');
-            $products = \App\Models\Product::whereIn('id', collect($items)->pluck('product_id')->unique())
-                ->get()->keyBy('id');
+
             return Inertia::render('Cart/Index', [
                 'items' => collect($items)->map(function ($i) {
                     $p = Product::find($i['product_id']);
+
+                    // ⬇️ соберём подписи диапазонов из сессии
+                    $rangeLabels = collect($i['range_options'] ?? [])
+                        ->map(fn($r) => ((int)$r['selected_min']) . '-' . ((int)$r['selected_max']))
+                        ->values()
+                        ->all();
+
                     return [
                         'id' => $i['id'],
                         'product' => [
                             'id' => $p?->id,
                             'name' => $p?->name ?? 'Unknown',
-
                             'image_url' => $p?->image_url,
                         ],
                         'qty' => $i['qty'],
                         'unit_price_cents' => $i['unit_price_cents'],
                         'line_total_cents' => $i['line_total_cents'],
+                        // ⬇️ новое поле
+                        'range_labels' => $rangeLabels,
                     ];
                 })->values(),
                 'total_qty' => $totalQty,
@@ -143,44 +397,63 @@ class CartController extends Controller
             ]);
         }
 
-        $cart = $this->getUserCart($request)->load('items.product');
+        $cart = $this->getUserCart($request)->load(['items.product', 'items.options']);
 
         return Inertia::render('Cart/Index', [
-            'items' => $cart->items->map(fn($item) => [
-                'id' => $item->id,
-                'product' => [
-                    'id' => $item->product->id,
-                    'name' => $item->product->name,
+            'items' => $cart->items->map(function ($item) {
+                $rangeLabels = $item->options
+                    // раньше было: ->whereNull('option_value_id')
+                    // делаем устойчивее:
+                    ->filter(fn($o) => !is_null($o->option_group_id))
+                    ->map(fn($o) => ((int)$o->selected_min) . '-' . ((int)$o->selected_max))
+                    ->values()
+                    ->all();
 
-                    'image_url' => $item->product->image_url,
-                ],
-                'qty' => $item->qty,
-                'unit_price_cents' => $item->unit_price_cents,
-                'line_total_cents' => $item->line_total_cents,
-            ]),
+                return [
+                    'id' => $item->id,
+                    'product' => [
+                        'id' => $item->product->id,
+                        'name' => $item->product->name,
+                        'image_url' => $item->product->image_url,
+                    ],
+                    'qty' => $item->qty,
+                    'unit_price_cents' => $item->unit_price_cents,
+                    'line_total_cents' => $item->line_total_cents,
+                    'range_labels' => $rangeLabels,
+                ];
+            })->values(),
             'total_qty' => $cart->items->count(),
             'total_sum_cents' => $cart->items->sum('line_total_cents'),
         ]);
     }
 
-    // ===== API
+    /* ====================== API ====================== */
 
     public function add(Request $request)
     {
         $data = $request->validate([
-            'product_id' => ['required', 'integer', 'exists:products,id'],
-            'qty' => ['nullable', 'integer', 'min:1'],
-            'option_value_ids' => ['array'],
+            'product_id'        => ['required', 'integer', 'exists:products,id'],
+            'qty'               => ['nullable', 'integer', 'min:1'],
+            'option_value_ids'  => ['array'],
             'option_value_ids.*' => ['integer', 'exists:option_values,id'],
+            // 👇 новые данные для double_range_slider
+            'range_options'     => ['array'],
+            'range_options.*.option_group_id' => ['required', 'integer', 'exists:option_groups,id'],
+            'range_options.*.selected_min'    => ['required', 'integer'],
+            'range_options.*.selected_max'    => ['required', 'integer'],
         ]);
 
         $optionIds = $this->normalizeOptionIds($data['option_value_ids'] ?? []);
         $this->validateSelection($data['product_id'], $optionIds);
 
-        // ✅ корректное qty с учётом min/max/step quantity_slider
+        // валидируем диапазоны
+        $rangeList = $this->validateRangeSelections($data['product_id'], $data['range_options'] ?? []);
+
+        // qty c учётом quantity_slider
         $qty = $this->validateAndResolveQty($data['product_id'], $data['qty'] ?? null);
 
-        $unit = $this->computeUnitPriceCents($data['product_id'], $optionIds);
+        // unit price с учётом value-прибавок (per-unit) и range (per-unit)
+        $unit = $this->computeUnitPriceCents($data['product_id'], $optionIds, $rangeList);
 
         if ($this->isGuest($request)) {
             $items = $this->getGuestCart($request);
@@ -192,10 +465,14 @@ class CartController extends Controller
                 'unit_price_cents' => $unit,
                 'line_total_cents' => $unit * $qty,
                 'option_value_ids' => $optionIds,
+                'range_options'    => $rangeList, // 👈 сохраним в сессию
             ];
 
             $this->saveGuestCart($request, $items);
-            return response()->json(['ok' => true]);
+            return response()->json([
+                'ok' => true,
+                'summary' => $this->summaryPayload($request),
+            ]);
         }
 
         // auth user → в БД
@@ -212,14 +489,43 @@ class CartController extends Controller
             $new->options()->create(['option_value_id' => $vid]);
         }
 
-        return response()->json(['ok' => true]);
+        // сохраним диапазоны в отдельной таблице
+        $productLoaded = $this->productWithGroups($data['product_id']);
+        foreach ($rangeList as $row) {
+            $deltaForOne = $this->computeRangePerUnitDelta($productLoaded, [$row]);
+
+            $new->options()->create([
+                'option_value_id'   => null, // признак: это запись-диапазон
+                'option_group_id'   => $row['option_group_id'],
+                'selected_min'      => $row['selected_min'],
+                'selected_max'      => $row['selected_max'],
+                'price_delta_cents' => $deltaForOne, // per-unit дельта для этого диапазона
+                'payload_json'      => [
+                    'pricing_mode'          => $productLoaded->optionGroups
+                        ->firstWhere('id', $row['option_group_id'])->pricing_mode ?? null,
+                    'tier_combine_strategy' => $productLoaded->optionGroups
+                        ->firstWhere('id', $row['option_group_id'])->tier_combine_strategy ?? null,
+                    'tiers'                 => is_array($productLoaded->optionGroups
+                        ->firstWhere('id', $row['option_group_id'])->tiers_json)
+                        ? $productLoaded->optionGroups
+                        ->firstWhere('id', $row['option_group_id'])->tiers_json
+                        : (json_decode((string)($productLoaded->optionGroups
+                            ->firstWhere('id', $row['option_group_id'])->tiers_json), true) ?: []),
+                ],
+            ]);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'summary' => $this->summaryPayload($request),
+        ]);
     }
 
     public function update(Request $request)
     {
         $data = $request->validate([
             'item_id' => ['required'],
-            'qty' => ['required', 'integer', 'min:1'],
+            'qty'     => ['required', 'integer', 'min:1'],
         ]);
 
         if ($this->isGuest($request)) {
@@ -230,11 +536,13 @@ class CartController extends Controller
             $i['qty'] = (int)$data['qty'];
             $i['line_total_cents'] = $i['unit_price_cents'] * $i['qty'];
 
-            // перезапись
             $items = collect($items)->map(fn($row) => $row['id'] === $i['id'] ? $i : $row)->values()->all();
             $this->saveGuestCart($request, $items);
 
-            return response()->json(['ok' => true]);
+            return response()->json([
+                'ok' => true,
+                'summary' => $this->summaryPayload($request),
+            ]);
         }
 
         $item = CartItem::findOrFail($data['item_id']);
@@ -242,7 +550,10 @@ class CartController extends Controller
         $item->line_total_cents = $item->unit_price_cents * $item->qty;
         $item->save();
 
-        return response()->json(['ok' => true]);
+        return response()->json([
+            'ok' => true,
+            'summary' => $this->summaryPayload($request),
+        ]);
     }
 
     public function remove(Request $request)
@@ -253,11 +564,21 @@ class CartController extends Controller
             $items = $this->getGuestCart($request);
             $items = collect($items)->reject(fn($i) => $i['id'] === $data['item_id'])->values()->all();
             $this->saveGuestCart($request, $items);
-            return response()->json(['ok' => true]);
+            return response()->json([
+                'ok' => true,
+                'summary' => $this->summaryPayload($request),
+            ]);
         }
 
-        CartItem::findOrFail($data['item_id'])->delete();
-        return response()->json(['ok' => true]);
+        $item = CartItem::findOrFail($data['item_id']);
+        // удалим «диапазонные» строки из cart_item_options (они с option_value_id = null)
+        $item->options()->whereNull('option_value_id')->delete();
+        $item->delete();
+
+        return response()->json([
+            'ok' => true,
+            'summary' => $this->summaryPayload($request),
+        ]);
     }
 
     public function summary(Request $request)
@@ -265,15 +586,14 @@ class CartController extends Controller
         if ($this->isGuest($request)) {
             $items = $this->getGuestCart($request);
             return [
-                // было: sum('qty')
-                'total_qty' => count($items),            // ✅ количество позиций (lines)
+                'total_qty'       => count($items),
                 'total_sum_cents' => collect($items)->sum('line_total_cents'),
             ];
         }
 
         $cart = $this->getUserCart($request)->load('items');
         return [
-            'total_qty' => $cart->items->count(),       // ✅ количество позиций (lines)
+            'total_qty'       => $cart->items->count(),
             'total_sum_cents' => $cart->items->sum('line_total_cents'),
         ];
     }

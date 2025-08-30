@@ -35,10 +35,10 @@ function formatPrice(cents: number) {
 
 
 const legalPages = usePage().props.legalPages as Array<{
-  id: number
-  name: string
-  code: string
-  url: string
+    id: number
+    name: string
+    code: string
+    url: string
 }>
 
 
@@ -151,28 +151,34 @@ onMounted(() => loadSummary())
                                 class="h-8 w-8 rounded-full object-cover" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent class="border border-border">
-                            
+
                             <DropdownMenuLabel>My Account</DropdownMenuLabel>
                             <DropdownMenuSeparator />
+                            <Link :href="route('dashboard')">
                             <DropdownMenuItem>
-                                <Link :href="route('dashboard')">Dashboard
-                                </Link>
+                                Dashboard
+
 
                             </DropdownMenuItem>
+                            </Link>
+                            <Link :href="route('orders.index')">
+                            <DropdownMenuItem>
+                                Orders
 
-                            <DropdownMenuItem>
-                                <Link :href="route('orders.index')">Orders
-                                </Link>
                             </DropdownMenuItem>
+                            </Link>
+                            <Link :href="route('profile.edit')">
                             <DropdownMenuItem>
-                                <Link :href="route('profile.edit')">Settings
-                                </Link>
-                            </DropdownMenuItem>
+                                Settings
 
-                            <DropdownMenuItem>
-                                <Link :href="route('logout')" method="post" as="button">Logout
-                                </Link>
                             </DropdownMenuItem>
+                            </Link>
+                            <Link :href="route('logout')" method="post" as="button">
+                            <DropdownMenuItem>
+                                Logout
+
+                            </DropdownMenuItem>
+                            </Link>
                         </DropdownMenuContent>
                     </DropdownMenu>
 
@@ -223,9 +229,9 @@ onMounted(() => loadSummary())
                 <div class="flex flex-col gap-2">
                     <h3 class="font-bold text-lg">Legal</h3>
                     <div v-for="p in legalPages" :key="p.id">
-                    <Link :href="p.url" class="opacity-60 hover:opacity-100">
+                        <Link :href="p.url" class="opacity-60 hover:opacity-100">
                         {{ p.name }}
-                    </Link>
+                        </Link>
                     </div>
                 </div>
 
