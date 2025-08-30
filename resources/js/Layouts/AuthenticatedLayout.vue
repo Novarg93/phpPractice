@@ -44,9 +44,9 @@ const showingNavigationDropdown = ref(false);
                                         <span class="inline-flex  rounded-md">
                                             <button type="button"
                                                 class="inline-flex items-center gap-2 rounded-md border border-transparent px-3 py-2 text-sm font-medium leading-4 transition duration-150 ease-in-out hover:text-gray-100 focus:outline-none">
-                                                <template v-if="$page.props.auth.user.avatar">
+                                                <template v-if="$page.props.auth.user.avatar_url">
                                                     <img
-                                                        :src="$page.props.auth.user.avatar"
+                                                        :src="$page.props.auth.user.avatar_url"
                                                         alt="Avatar"
                                                         class="h-8 w-8 rounded-full object-cover"
                                                     />

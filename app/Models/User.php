@@ -2,56 +2,58 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Support\Facades\Storage;
 
+
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
+    public const ROLE_ADMIN   = 'admin';
+    public const ROLE_SUPPORT = 'support';
+    public const ROLE_USER    = 'user';
+
+    public static function roleOptions(): array
+    {
+        return [
+            self::ROLE_USER    => 'User',
+            self::ROLE_SUPPORT => 'Support',
+            self::ROLE_ADMIN   => 'Admin',
+        ];
+    }
+
     protected $fillable = [
         'name',
         'full_name',
         'email',
         'password',
-        'avatar',
+        'avatar',   // <- в БД ХРАНИМ ТОЛЬКО ПУТЬ, например "avatars/xxx.jpg"
+        'role',
     ];
-    protected function avatar(): Attribute
+
+    // Аккуратный URL для фронта (не ломает FileUpload)
+    protected $appends = ['avatar_url'];
+
+    protected function avatarUrl(): Attribute
     {
-        return Attribute::get(
-            fn($value) => $value
-                ? (str_starts_with($value, 'http') || str_starts_with($value, '/')
-                    ? $value
-                    : Storage::url($value))   // <= превратит avatars/xx.jpg → /storage/avatars/xx.jpg
-                : null
-        );
+        return Attribute::get(function ($value, $attributes) {
+            $raw = $attributes['avatar'] ?? null;           // путь или null
+            if (!$raw) return null;
+
+            // если вдруг уже URL — вернём как есть
+            if (str_starts_with($raw, 'http') || str_starts_with($raw, '/')) {
+                return $raw;
+            }
+            return Storage::url($raw); // "avatars/xx.jpg" -> "/storage/avatars/xx.jpg"
+        });
     }
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
-    protected $hidden = [
-        'password',
-        'remember_token',
-    ];
+    protected $hidden = ['password', 'remember_token'];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
     protected function casts(): array
     {
         return [

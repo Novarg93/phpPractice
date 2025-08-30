@@ -70,8 +70,8 @@ function submit() {
         <input id="avatar" type="file" @change="e => form.avatar = e.target.files?.[0] ?? null" />
         <InputError class="mt-2" :message="form.errors.avatar" />
 
-        <div v-if="user.avatar" class="mt-2">
-          <img :src="user.avatar" class="h-16 w-16 rounded-full object-cover" />
+        <div v-if="user.avatar_url" class="mt-2">
+          <img :src="user.avatar_url" class="h-16 w-16 rounded-full object-cover" />
         </div>
       </div>
 

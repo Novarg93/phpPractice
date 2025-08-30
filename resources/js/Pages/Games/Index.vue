@@ -7,7 +7,7 @@
           <h1 class="text-3xl font-bold">Games</h1>
           <p class="text-sm text-muted-foreground">Выбери игру, чтобы посмотреть разделы и товары.</p>
         </div>
-    
+        
         <div class="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           <article
             v-for="g in games"

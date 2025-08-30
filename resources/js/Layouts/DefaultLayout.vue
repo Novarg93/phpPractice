@@ -147,7 +147,7 @@ onMounted(() => loadSummary())
                 <div v-if="$page.props.auth.user" class="flex justify-between items-center">
                     <DropdownMenu>
                         <DropdownMenuTrigger>
-                            <img :src="$page.props.auth.user.avatar" alt="Avatar"
+                            <img :src="$page.props.auth.user.avatar_url" alt="Avatar"
                                 class="h-8 w-8 rounded-full object-cover" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent class="border border-border">
