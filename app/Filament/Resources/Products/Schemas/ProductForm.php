@@ -186,6 +186,7 @@ class ProductForm
                                             ->options(['flat' => 'Flat per level', 'tiered' => 'Tiered'])
                                             ->required()
                                             ->native(false)
+                                            ->live()
                                             ->columnSpan(6),
 
                                         // FLAT
@@ -200,6 +201,7 @@ class ProductForm
                                         FRepeater::make('tiers_json')
                                             ->label('Tiers')
                                             ->visible(fn(callable $get) => $get('pricing_mode') === 'tiered')
+                                            ->reactive()
                                             ->defaultItems(0)
                                             ->schema([
                                                 TextInput::make('from')->numeric()->required()->label('From'),
