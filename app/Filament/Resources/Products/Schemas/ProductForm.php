@@ -69,7 +69,8 @@ class ProductForm
 
                     // (Опционально) чтобы при редактировании в мультиселекте не светилась “main”,
                     // убираем её из состояния (только для UI), но в БД она всё равно будет.
-                    ->afterStateHydrated(function ($state, callable $set, \App\Models\Product $record) {
+                    ->afterStateHydrated(function ($state, callable $set, ?\App\Models\Product $record) {
+                        if (! $record) return;
                         if (! $state) return;
                         if (! $record->category_id) return;
 

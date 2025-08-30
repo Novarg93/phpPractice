@@ -507,7 +507,7 @@ async function addToCart() {
                 <div class="relative">
                   <input
                     type="range"
-                    class="w-full appearance-none bg-transparent"
+                    class="w-full appearance-none bg-transparent absolute top-0 -translate-y-6  "
                     :min="group.slider_min"
                     :max="group.slider_max"
                     :step="group.slider_step || 1"
@@ -517,13 +517,13 @@ async function addToCart() {
                   />
                   <input
                     type="range"
-                    class="w-full appearance-none bg-transparent -mt-6"
+                    class="w-full appearance-none bg-transparent absolute top-0 -translate-y-8  "
                     :min="group.slider_min"
                     :max="group.slider_max"
                     :step="group.slider_step || 1"
                     :value="selectedRange[group.id]?.max ?? group.slider_max"
                     @input="onRangeMaxChange(group, Number(($event.target as HTMLInputElement).value))"
-                    style="position: relative; z-index: 10;"
+                    style="position: relative; z-index: 20;"
                   />
                 </div>
 
