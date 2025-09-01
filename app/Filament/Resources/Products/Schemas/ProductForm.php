@@ -184,11 +184,19 @@ class ProductForm
 
                                     Select::make('pricing_mode')
                                         ->label('Pricing')
-                                        ->options(['absolute' => 'Absolute (+N cents)', 'percent' => 'Percent (+N%)'])
+                                        ->options([
+                                            'absolute' => 'Absolute (+N cents)',
+                                            'percent'  => 'Percent (+N%)',
+                                        ])
                                         ->visible(fn(callable $get) => $get('type') === OptionGroup::TYPE_SELECTOR)
-                                        ->required()
+                                        ->required(fn(callable $get) => $get('type') === OptionGroup::TYPE_SELECTOR)
                                         ->live()
-                                        ->native(false)
+                                        ->dehydrated(fn(callable $get) => $get('type') === OptionGroup::TYPE_SELECTOR)
+                                        ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                                            if ($get('type') === OptionGroup::TYPE_SELECTOR && ! in_array($state, ['absolute', 'percent'], true)) {
+                                                $set('pricing_mode', 'absolute'); // дефолт для selector
+                                            }
+                                        })
                                         ->columnSpan(6),
 
                                     // 👇 ОСТАВЛЯЕМ РОВНО ОДИН toggle
@@ -196,7 +204,13 @@ class ProductForm
                                         ->label('Multiply by quantity')
                                         ->helperText('Если включено — надбавка умножается на qty; если выключено — добавляется один раз на позицию.')
                                         ->visible(fn(callable $get) => ! in_array($get('type'), [OptionGroup::TYPE_SLIDER, OptionGroup::TYPE_RANGE], true))
-                                        ->default(false)
+                                        ->default(true) // ← включаем по умолчанию
+                                        ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                                            // При создании (state === null) — включаем, но не перетираем сохранённое false
+                                            if ($state === null && ! in_array($get('type'), [OptionGroup::TYPE_SLIDER, OptionGroup::TYPE_RANGE], true)) {
+                                                $set('multiply_by_qty', true);
+                                            }
+                                        })
                                         ->columnSpan(12),
                                 ])->columnSpanFull(),
 
@@ -214,10 +228,19 @@ class ProductForm
 
                                         Select::make('pricing_mode')
                                             ->label('Pricing mode')
-                                            ->options(['flat' => 'Flat per level', 'tiered' => 'Tiered'])
-                                            ->required()
-                                            ->native(false)
+                                            ->options([
+                                                'flat'   => 'Flat per level',
+                                                'tiered' => 'Tiered',
+                                            ])
+                                            ->visible(fn(callable $get) => $get('type') === OptionGroup::TYPE_RANGE)
+                                            ->required(fn(callable $get) => $get('type') === OptionGroup::TYPE_RANGE)
                                             ->live()
+                                            ->dehydrated(fn(callable $get) => $get('type') === OptionGroup::TYPE_RANGE)
+                                            ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                                                if ($get('type') === OptionGroup::TYPE_RANGE && ! in_array($state, ['flat', 'tiered'], true)) {
+                                                    $set('pricing_mode', 'flat');
+                                                }
+                                            })
                                             ->columnSpan(6),
 
                                         // FLAT

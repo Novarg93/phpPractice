@@ -45,7 +45,7 @@ class ProductController extends Controller
                         'id'              => $g->id,
                         'title'           => $g->title,
                         'is_required'     => (bool) $g->is_required,
-                        'multiply_by_qty' => (bool) ($g->multiply_by_qty ?? false),
+                        'multiply_by_qty' => is_null($g->multiply_by_qty) ? true : (bool) $g->multiply_by_qty,
                     ];
                     if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
                         return array_merge($base, [
