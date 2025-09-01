@@ -29,8 +29,7 @@ function formatPrice(cents: number) {
 <template>
   <DefaultLayout>
     <section class="w-[90%] 2xl:w-[75%] mx-auto py-8">
-      <h1 class="text-3xl font-semibold mb-6">Order #{{ order.id }}</h1>
-      
+      <h1 class="text-3xl font-semibold mb-6">Order #{{ order.id }}</h1>      
       <div class="grid lg:grid-cols-3 gap-6">
         <!-- items -->
         <div class="lg:col-span-2 space-y-3">

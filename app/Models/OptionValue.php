@@ -10,12 +10,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class OptionValue extends Model
 {
     protected $fillable = [
-        'option_group_id','title','price_delta_cents','is_active','is_default','position',
+        'option_group_id','title','price_delta_cents','value_percent','is_active','is_default','position',
     ];
 
     protected $casts = [
-        'is_active' => 'bool',
-        'is_default' => 'bool',
+        'is_active'   => 'bool',
+        'is_default'  => 'bool',
+        'value_percent' => 'float',
     ];
 
     public function group(): BelongsTo

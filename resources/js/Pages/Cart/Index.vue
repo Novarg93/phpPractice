@@ -90,7 +90,7 @@ async function removeItem(item: CartItem) {
                 </BreadcrumbList>
             </Breadcrumb>
             <h1 class="text-3xl font-semibold my-6">Your Cart</h1>
-            
+             
             <div v-if="items.length" class="space-y-4">
                 <div v-for="item in items" :key="item.id" class="flex items-center gap-4 border rounded-lg p-4">
                     <img v-if="item.product.image_url" :src="item.product.image_url" alt=""

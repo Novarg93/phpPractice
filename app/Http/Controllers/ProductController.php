@@ -50,7 +50,10 @@ class ProductController extends Controller
                         'multiply_by_qty' => (bool) $g->multiply_by_qty,
                     ];
 
+                    // ...внутри map(function ($g) { ... }) :
+
                     switch ($g->type) {
+                        // === Аддитивные группы (+N в валюте) ===
                         case \App\Models\OptionGroup::TYPE_RADIO:
                         case \App\Models\OptionGroup::TYPE_CHECKBOX:
                             return array_merge($base, [
@@ -60,11 +63,30 @@ class ProductController extends Controller
                                         'id'                 => $v->id,
                                         'title'              => $v->title,
                                         'price_delta_cents'  => (int) $v->price_delta_cents,
+                                        'value_percent'      => null,                 // 👈 для совместимости фронта
                                         'is_default'         => (bool) $v->is_default,
                                     ])->values(),
                             ]);
 
-                        case \App\Models\OptionGroup::TYPE_SLIDER: // quantity_slider
+                            // === НОВОЕ: Процентные группы (+N%) ===
+                        case \App\Models\OptionGroup::TYPE_RADIO_PERCENT:
+                        case \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT:
+                            return array_merge($base, [
+                                'values' => $g->values
+                                    ->where('is_active', true)
+                                    ->map(fn($v) => [
+                                        'id'                 => $v->id,
+                                        'title'              => $v->title,
+                                        'price_delta_cents'  => null,                              // аддитив тут не используется
+                                        'value_percent'      => isset($v->value_percent)           // 👈 главное поле
+                                            ? (float) $v->value_percent
+                                            : 0.0,
+                                        'is_default'         => (bool) $v->is_default,
+                                    ])->values(),
+                            ]);
+
+                            // === quantity_slider ===
+                        case \App\Models\OptionGroup::TYPE_SLIDER:
                             return array_merge($base, [
                                 'qty_min'     => (int)($g->qty_min     ?? 1),
                                 'qty_max'     => (int)max($g->qty_min ?? 1, $g->qty_max ?? 1),
@@ -72,14 +94,13 @@ class ProductController extends Controller
                                 'qty_default' => (int)($g->qty_default ?? ($g->qty_min ?? 1)),
                             ]);
 
-                        case \App\Models\OptionGroup::TYPE_RANGE: // double_range_slider
+                            // === double_range_slider ===
+                        case \App\Models\OptionGroup::TYPE_RANGE:
                             return array_merge($base, [
-                                // числовые границы и шаг
                                 'slider_min'        => (int)($g->slider_min  ?? 1),
                                 'slider_max'        => (int)max($g->slider_min ?? 1, $g->slider_max ?? 1),
                                 'slider_step'       => (int)max(1, (int)($g->slider_step ?? 1)),
 
-                                // дефолтный выбранный диапазон
                                 'range_default_min' => isset($g->range_default_min)
                                     ? (int)$g->range_default_min
                                     : (int)($g->slider_min ?? 1),
@@ -87,14 +108,12 @@ class ProductController extends Controller
                                     ? (int)$g->range_default_max
                                     : (int)max($g->slider_min ?? 1, $g->slider_max ?? 1),
 
-                                // ценообразование
                                 'pricing_mode'          => $g->pricing_mode ?? 'flat',
                                 'unit_price_cents'      => isset($g->unit_price_cents) ? (int)$g->unit_price_cents : null,
                                 'tier_combine_strategy' => $g->tier_combine_strategy ?: 'sum_piecewise',
                                 'base_fee_cents'        => (int)($g->base_fee_cents ?? 0),
                                 'max_span'              => isset($g->max_span) ? (int)$g->max_span : null,
 
-                                // тиеры (переименуем в "tiers" для фронта)
                                 'tiers' => collect($g->tiers_json ?? [])->map(function ($t) {
                                     return [
                                         'from'             => (int)($t['from'] ?? 0),

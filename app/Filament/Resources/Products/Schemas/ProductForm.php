@@ -12,7 +12,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
 use Filament\Schemas\Components\Section as UiSection;
-use Filament\Forms\Set;
+use Filament\Forms\Get;
 use Illuminate\Support\Str;
 
 use App\Models\OptionGroup;
@@ -146,13 +146,16 @@ class ProductForm
                                     Select::make('type')
                                         ->label('Type')
                                         ->options([
-                                            OptionGroup::TYPE_RADIO    => 'DefaultRadiobuttonAdditive',
-                                            OptionGroup::TYPE_CHECKBOX => 'DefaultCheckboxAdditive',
-                                            OptionGroup::TYPE_SLIDER   => 'QuantitySlider',
-                                            OptionGroup::TYPE_RANGE    => 'DoubleRangeSlider',
+                                            OptionGroup::TYPE_RADIO            => 'DefaultRadiobuttonAdditive (+N)',
+                                            OptionGroup::TYPE_CHECKBOX         => 'DefaultCheckboxAdditive (+N)',
+                                            OptionGroup::TYPE_RADIO_PERCENT    => 'RadiobuttonPercent (+N%)',
+                                            OptionGroup::TYPE_CHECKBOX_PERCENT => 'CheckboxPercent (+N%)',
+                                            OptionGroup::TYPE_SLIDER           => 'QuantitySlider',
+                                            OptionGroup::TYPE_RANGE            => 'DoubleRangeSlider',
                                         ])
                                         ->native(false)
                                         ->required()
+                                        ->default(OptionGroup::TYPE_RADIO) // чтобы "Value (cents)" не прятался на пустом типе
                                         ->live()
                                         ->columnSpan(12),
 
@@ -249,12 +252,55 @@ class ProductForm
                                     ->defaultItems(0)
                                     ->collapsed()
                                     ->columns(12)
-                                    ->visible(fn(callable $get) => ! in_array($get('type'), [OptionGroup::TYPE_SLIDER, OptionGroup::TYPE_RANGE], true))
+                                    ->visible(fn(callable $get) => ! in_array(($get('../../type') ?? $get('type')), [
+                                        OptionGroup::TYPE_SLIDER,
+                                        OptionGroup::TYPE_RANGE,
+                                    ], true))
                                     ->schema([
-                                        TextInput::make('title')->label('Option title')->required()->columnSpan(6),
-                                        TextInput::make('price_delta_cents')->label('cents')->numeric()->default(0)->hint('additive')->columnSpan(3),
-                                        Toggle::make('is_active')->label('Active')->default(true)->inline(false)->columnSpan(1),
-                                        Toggle::make('is_default')->label('Default')->default(false)->inline(false)->columnSpan(2),
+                                        TextInput::make('title')
+                                            ->label('Option title')
+                                            ->required()
+                                            ->columnSpan(6),
+
+                                        // Аддитив: +N в валюте
+                                        TextInput::make('price_delta_cents')
+                                            ->label('Value (cents)')
+                                            ->numeric()
+                                            ->default(0)
+                                            ->columnSpan(3)
+                                            ->visible(fn(callable $get) => in_array(($get('../../type') ?? $get('type')), [
+                                                OptionGroup::TYPE_RADIO,
+                                                OptionGroup::TYPE_CHECKBOX,
+                                            ], true)),
+
+                                        // Проценты: +N%
+                                        TextInput::make('value_percent')
+                                            ->label('Value (%)')
+                                            ->numeric()
+                                            ->rule('decimal:0,3')
+                                            ->default(null)
+                                            ->placeholder('e.g., 5 or 12.5')
+                                            ->columnSpan(3)
+                                            ->visible(fn(callable $get) => in_array(($get('../../type') ?? $get('type')), [
+                                                OptionGroup::TYPE_RADIO_PERCENT,
+                                                OptionGroup::TYPE_CHECKBOX_PERCENT,
+                                            ], true)),
+
+                                        Toggle::make('is_active')
+                                            ->label('Active')
+                                            ->default(true)
+                                            ->inline(false)
+                                            ->columnSpan(1),
+
+                                        Toggle::make('is_default')
+                                            ->label('Default')
+                                            ->default(false)
+                                            ->inline(false)
+                                            ->columnSpan(2)
+                                            ->visible(fn(callable $get) => in_array(($get('../../type') ?? $get('type')), [
+                                                OptionGroup::TYPE_RADIO,
+                                                OptionGroup::TYPE_RADIO_PERCENT,
+                                            ], true)),
                                     ])
                                     ->columnSpanFull(),
                             ])

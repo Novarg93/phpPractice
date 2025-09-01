@@ -8,6 +8,31 @@ import { useCartSummary, summary } from '@/composables/useCartSummary' // summar
 import Breadcrumbs from '@/Components/Breadcrumbs.vue'
 
 
+type GroupType =
+  | 'radio_additive'
+  | 'checkbox_additive'
+  | 'radio_percent'
+  | 'checkbox_percent'
+  | 'quantity_slider'
+  | 'double_range_slider'
+
+type OptionItem = {
+  id: number
+  title: string
+  price_delta_cents?: number | null
+  value_percent?: number | null
+  is_default?: boolean
+  is_active?: boolean
+}
+type OptionGroup = {
+  id: number
+  title: string
+  type: GroupType
+  is_required?: boolean
+  multiply_by_qty?: boolean
+  values: OptionItem[]
+}
+
 type RangeTier = {
   from: number
   to: number
@@ -53,21 +78,21 @@ const props = defineProps<{
   product: Product & {
     option_groups?: Array<
       | {
-          id: number
-          title: string
-          type: 'radio_additive'
-          is_required: boolean
-          multiply_by_qty?: boolean
-          values: Array<{ id: number; title: string; price_delta_cents: number; is_default?: boolean }>
-        }
+        id: number
+        title: string
+        type: 'radio_additive'
+        is_required: boolean
+        multiply_by_qty?: boolean
+        values: Array<{ id: number; title: string; price_delta_cents: number; is_default?: boolean }>
+      }
       | {
-          id: number
-          title: string
-          type: 'checkbox_additive'
-          is_required: boolean
-          multiply_by_qty?: boolean
-          values: Array<{ id: number; title: string; price_delta_cents: number }>
-        }
+        id: number
+        title: string
+        type: 'checkbox_additive'
+        is_required: boolean
+        multiply_by_qty?: boolean
+        values: Array<{ id: number; title: string; price_delta_cents: number }>
+      }
       | QtyGroup
       | DoubleRangeGroup
     >
@@ -96,6 +121,19 @@ function isPerUnitFlag(v: unknown): boolean {
   // true если boolean true / 1 / "1"
   return v === true || v === 1 || v === '1'
 }
+
+function selectedIdsForGroup(g: OptionGroup): number[] {
+  if (g.type === 'radio_additive' || g.type === 'radio_percent') {
+    const id = selectedByGroup.value[g.id]
+    return id != null ? [id] : []
+  }
+  if (g.type === 'checkbox_additive' || g.type === 'checkbox_percent') {
+    return Array.from(selectedMulti.value[g.id] ?? [])
+  }
+  return []
+}
+
+
 
 /* ========================================================================== */
 /* ============= Quantity slider =========================================== */
@@ -199,8 +237,8 @@ function priceRangeTiered(g: DoubleRangeGroup, sel: { min: number; max: number }
     strategy === 'highest_tier_only'
       ? highestUnit * spanTotal
       : strategy === 'weighted_average'
-      ? Math.round((spanTotal > 0 ? weightedSum / spanTotal : 0) * spanTotal)
-      : piecewise
+        ? Math.round((spanTotal > 0 ? weightedSum / spanTotal : 0) * spanTotal)
+        : piecewise
 
   const baseFee = Number(g.base_fee_cents ?? 0)
   return baseFee + variablePart
@@ -212,14 +250,15 @@ function priceRangeTiered(g: DoubleRangeGroup, sel: { min: number; max: number }
 const selectedByGroup = ref<Record<number, number | null>>({})
 const selectedMulti = ref<Record<number, Set<number>>>({})
 
-;(product.option_groups ?? []).forEach((g) => {
-  if (g.type === 'radio_additive') {
-    const def = g.values.find((v) => v.is_default) ?? g.values[0]
-    selectedByGroup.value[g.id] = def ? def.id : null
-  } else if (g.type === 'checkbox_additive') {
-    selectedMulti.value[g.id] = new Set<number>()
-  }
-})
+  ; (product.option_groups ?? []).forEach((g) => {
+    if (g.type === 'radio_additive' || g.type === 'radio_percent') {
+      const def = g.values.find((v) => v.is_default) ?? g.values[0]
+      selectedByGroup.value[g.id] = def ? def.id : null
+    } else if (g.type === 'checkbox_additive' || g.type === 'checkbox_percent') {
+      selectedMulti.value[g.id] = new Set<number>()
+    }
+  })
+
 
 /* ========================================================================== */
 /* ============= Lifecycle =================================================== */
@@ -234,7 +273,7 @@ onMounted(() => {
   }
 
   // range init
-  ;(product.option_groups ?? []).forEach((g) => {
+  ; (product.option_groups ?? []).forEach((g) => {
     if (g.type === 'double_range_slider') {
       const defMin = Number(g.range_default_min ?? g.slider_min)
       const defMax = Number(g.range_default_max ?? g.slider_max)
@@ -255,65 +294,113 @@ watch(qty, (v) => {
 /* ========================================================================== */
 const optionsPerUnitCents = computed(() => {
   let sum = 0
-  ;(product.option_groups ?? []).forEach((g: any) => {
-    if (g.type === 'radio_additive') {
-      const vid = selectedByGroup.value[g.id]
-      if (vid != null) {
-        const v = g.values.find((x: any) => x.id === vid)
-        if (v && isPerUnitFlag(g.multiply_by_qty)) sum += Number(v.price_delta_cents || 0)
+    ; (product.option_groups ?? []).forEach((g: any) => {
+      if (g.type === 'radio_additive') {
+        const vid = selectedByGroup.value[g.id]
+        if (vid != null) {
+          const v = g.values.find((x: any) => x.id === vid)
+          if (v && isPerUnitFlag(g.multiply_by_qty)) sum += Number(v.price_delta_cents || 0)
+        }
+      } else if (g.type === 'checkbox_additive') {
+        selectedMulti.value[g.id]?.forEach((vid) => {
+          const v = g.values.find((x: any) => x.id === vid)
+          if (v && isPerUnitFlag(g.multiply_by_qty)) sum += Number(v.price_delta_cents || 0)
+        })
       }
-    } else if (g.type === 'checkbox_additive') {
-      selectedMulti.value[g.id]?.forEach((vid) => {
-        const v = g.values.find((x: any) => x.id === vid)
-        if (v && isPerUnitFlag(g.multiply_by_qty)) sum += Number(v.price_delta_cents || 0)
-      })
-    }
-  })
+    })
   return sum
 })
 
 const optionsPerOrderCents = computed(() => {
   let sum = 0
-  ;(product.option_groups ?? []).forEach((g: any) => {
-    if (g.type === 'radio_additive') {
-      const vid = selectedByGroup.value[g.id]
-      if (vid != null) {
-        const v = g.values.find((x: any) => x.id === vid)
-        if (v && !isPerUnitFlag(g.multiply_by_qty)) sum += Number(v.price_delta_cents || 0)
+    ; (product.option_groups ?? []).forEach((g: any) => {
+      if (g.type === 'radio_additive') {
+        const vid = selectedByGroup.value[g.id]
+        if (vid != null) {
+          const v = g.values.find((x: any) => x.id === vid)
+          if (v && !isPerUnitFlag(g.multiply_by_qty)) sum += Number(v.price_delta_cents || 0)
+        }
+      } else if (g.type === 'checkbox_additive') {
+        selectedMulti.value[g.id]?.forEach((vid) => {
+          const v = g.values.find((x: any) => x.id === vid)
+          if (v && !isPerUnitFlag(g.multiply_by_qty)) sum += Number(v.price_delta_cents || 0)
+        })
       }
-    } else if (g.type === 'checkbox_additive') {
-      selectedMulti.value[g.id]?.forEach((vid) => {
-        const v = g.values.find((x: any) => x.id === vid)
-        if (v && !isPerUnitFlag(g.multiply_by_qty)) sum += Number(v.price_delta_cents || 0)
-      })
-    }
-  })
+    })
   return sum
 })
 
 /** сумма per-unit по всем double_range_slider */
 const totalRangePerUnitCents = computed(() => {
   let sum = 0
-  ;(product.option_groups ?? []).forEach((g: any) => {
-    if (g.type !== 'double_range_slider') return
-    const sel = selectedRange.value[g.id]
-    if (!sel) return
-    if (g.pricing_mode === 'tiered') {
-      sum += priceRangeTiered(g, sel)
-    } else {
-      sum += priceRangeFlat(g, sel)
-    }
-  })
+    ; (product.option_groups ?? []).forEach((g: any) => {
+      if (g.type !== 'double_range_slider') return
+      const sel = selectedRange.value[g.id]
+      if (!sel) return
+      if (g.pricing_mode === 'tiered') {
+        sum += priceRangeTiered(g, sel)
+      } else {
+        sum += priceRangeFlat(g, sel)
+      }
+    })
   return sum
 })
 
+const percentPerUnitFactor = computed(() => {
+  let factor = 1.0
+    ; (product.option_groups ?? []).forEach((g: any) => {
+      if (g.type !== 'radio_percent' && g.type !== 'checkbox_percent') return
+      const perUnit = isPerUnitFlag(g.multiply_by_qty)
+      if (!perUnit) return
+
+      const ids = selectedIdsForGroup(g)
+      ids.forEach((vid) => {
+        const v = g.values.find((x: any) => x.id === vid)
+        if (!v) return
+        const p = Number(v.value_percent ?? 0)
+        factor *= (1 + p / 100)
+      })
+    })
+  return factor
+})
+
+const percentPerOrderFactor = computed(() => {
+  let factor = 1.0
+    ; (product.option_groups ?? []).forEach((g: any) => {
+      if (g.type !== 'radio_percent' && g.type !== 'checkbox_percent') return
+      const perUnit = isPerUnitFlag(g.multiply_by_qty)
+      if (perUnit) return
+
+      const ids = selectedIdsForGroup(g)
+      ids.forEach((vid) => {
+        const v = g.values.find((x: any) => x.id === vid)
+        if (!v) return
+        const p = Number(v.value_percent ?? 0)
+        factor *= (1 + p / 100)
+      })
+    })
+  return factor
+})
+
 const unitCents = computed(() => {
-  return Number(product.price_cents || 0) + optionsPerUnitCents.value + totalRangePerUnitCents.value
+  const base =
+    Number(product.price_cents || 0) +
+    optionsPerUnitCents.value +
+    totalRangePerUnitCents.value
+
+  // применяем проценты, которые умножаются на цену единицы
+  return Math.round(base * percentPerUnitFactor.value)
 })
 
 const totalCents = computed(() => {
   const q = qtyGroup.value ? Number(qty.value || 1) : 1
-  return unitCents.value * q + optionsPerOrderCents.value
+  const subtotal = unitCents.value * q
+
+  // прибавляем единовременные аддитивные опции
+  const beforePercent = subtotal + optionsPerOrderCents.value
+
+  // применяем проценты, которые действуют на общий итог
+  return Math.round(beforePercent * percentPerOrderFactor.value)
 })
 
 /* ========================================================================== */
@@ -322,28 +409,28 @@ const totalCents = computed(() => {
 async function addToCart() {
   try {
     const chosen: number[] = []
-    ;(product.option_groups ?? []).forEach((g: any) => {
-      if (g.type === 'radio_additive') {
-        const vid = selectedByGroup.value[g.id]
-        if (vid != null) chosen.push(vid)
-      } else if (g.type === 'checkbox_additive') {
-        selectedMulti.value[g.id]?.forEach((id) => chosen.push(id))
-      }
-    })
+      ; (product.option_groups ?? []).forEach((g: any) => {
+        if (g.type === 'radio_additive' || g.type === 'radio_percent') {
+          const vid = selectedByGroup.value[g.id]
+          if (vid != null) chosen.push(vid)
+        } else if (g.type === 'checkbox_additive' || g.type === 'checkbox_percent') {
+          selectedMulti.value[g.id]?.forEach((id) => chosen.push(id))
+        }
+      })
 
     const range_options: Array<{ option_group_id: number; selected_min: number; selected_max: number }> = []
-    ;(product.option_groups ?? []).forEach((g: any) => {
-      if (g.type === 'double_range_slider') {
-        const sel = selectedRange.value[g.id]
-        if (sel) {
-          range_options.push({
-            option_group_id: g.id,
-            selected_min: sel.min,
-            selected_max: sel.max,
-          })
+      ; (product.option_groups ?? []).forEach((g: any) => {
+        if (g.type === 'double_range_slider') {
+          const sel = selectedRange.value[g.id]
+          if (sel) {
+            range_options.push({
+              option_group_id: g.id,
+              selected_min: sel.min,
+              selected_max: sel.max,
+            })
+          }
         }
-      }
-    })
+      })
 
     const { data } = await axios.post('/cart/add', {
       product_id: product.id,
@@ -383,7 +470,7 @@ async function addToCart() {
           <h1 class="text-3xl font-semibold">{{ product.name }}</h1>
 
           <div class="mt-2 text-2xl font-bold">
-            Base: <span>{{ formatPrice(unitCents) }}</span>
+            Unit: <span>{{ formatPrice(unitCents) }}</span>
             <template v-if="qtyGroup">
               → Total: <span class="text-primary">{{ formatPrice(totalCents) }}</span>
             </template>
@@ -400,13 +487,8 @@ async function addToCart() {
               <!-- radio -->
               <div v-if="group.type === 'radio_additive'" class="space-y-2">
                 <label v-for="v in group.values" :key="v.id" class="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    :name="'g-' + group.id"
-                    :value="v.id"
-                    :checked="selectedByGroup[group.id] === v.id"
-                    @change="selectedByGroup[group.id] = v.id"
-                  />
+                  <input type="radio" :name="'g-' + group.id" :value="v.id"
+                    :checked="selectedByGroup[group.id] === v.id" @change="selectedByGroup[group.id] = v.id" />
                   <span>{{ v.title }}</span>
                   <span class="ml-auto text-sm text-muted-foreground">
                     {{ v.price_delta_cents >= 0 ? '+' : '' }}{{ formatPrice(v.price_delta_cents) }}
@@ -414,24 +496,50 @@ async function addToCart() {
                 </label>
               </div>
 
+              <!-- radio (percent) -->
+              <div v-else-if="group.type === 'radio_percent'" class="space-y-2">
+                <label v-for="v in group.values" :key="v.id" class="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" :name="'g-' + group.id" :value="v.id"
+                    :checked="selectedByGroup[group.id] === v.id" @change="selectedByGroup[group.id] = v.id" />
+                  <span>{{ v.title }}</span>
+                  <span class="ml-auto text-sm text-muted-foreground">
+                    +{{ (v.value_percent ?? 0) }}%
+                  </span>
+                </label>
+              </div>
+
+
+
               <!-- checkbox -->
               <div v-else-if="group.type === 'checkbox_additive'" class="space-y-2">
                 <label v-for="v in group.values" :key="v.id" class="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    :checked="selectedMulti[group.id]?.has(v.id)"
-                    @change="(e: any) => {
-                      const set = selectedMulti[group.id];
-                      if (!set) return;
-                      if (e.target.checked) set.add(v.id); else set.delete(v.id);
-                    }"
-                  />
+                  <input type="checkbox" :checked="selectedMulti[group.id]?.has(v.id)" @change="(e: any) => {
+                    const set = selectedMulti[group.id];
+                    if (!set) return;
+                    if (e.target.checked) set.add(v.id); else set.delete(v.id);
+                  }" />
                   <span>{{ v.title }}</span>
                   <span class="ml-auto text-sm text-muted-foreground">
                     {{ v.price_delta_cents >= 0 ? '+' : '' }}{{ formatPrice(v.price_delta_cents) }}
                   </span>
                 </label>
               </div>
+
+              <!-- checkbox (percent) -->
+              <div v-else-if="group.type === 'checkbox_percent'" class="space-y-2">
+                <label v-for="v in group.values" :key="v.id" class="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" :checked="selectedMulti[group.id]?.has(v.id)" @change="(e: any) => {
+                    const set = selectedMulti[group.id];
+                    if (!set) return;
+                    if (e.target.checked) set.add(v.id); else set.delete(v.id);
+                  }" />
+                  <span>{{ v.title }}</span>
+                  <span class="ml-auto text-sm text-muted-foreground">
+                    +{{ (v.value_percent ?? 0) }}%
+                  </span>
+                </label>
+              </div>
+
 
               <!-- quantity slider -->
               <div v-else-if="group.type === 'quantity_slider'" class="space-y-3">
@@ -443,26 +551,16 @@ async function addToCart() {
                   </div>
                 </div>
 
-                <input
-                  type="range"
-                  class="w-full"
-                  :min="group.qty_min ?? 1"
-                  :max="group.qty_max ?? 1"
-                  :step="group.qty_step ?? 1"
-                  v-model.number="qty"
-                />
+                <input type="range" class="w-full" :min="group.qty_min ?? 1" :max="group.qty_max ?? 1"
+                  :step="group.qty_step ?? 1" v-model.number="qty" />
 
                 <div class="mt-2 flex items-center gap-2">
-                  <input
-                    type="number"
-                    class="w-24 bg-background border rounded px-2 py-1"
-                    :min="group.qty_min ?? 1"
-                    :max="group.qty_max ?? 1"
-                    :step="group.qty_step ?? 1"
-                    v-model.number="qty"
-                  />
-                  <button class="px-2 py-1 border rounded" @click="qty = Math.max(group.qty_min ?? 1, qty - (group.qty_step ?? 1))">-</button>
-                  <button class="px-2 py-1 border rounded" @click="qty = Math.min(group.qty_max ?? 1, qty + (group.qty_step ?? 1))">+</button>
+                  <input type="number" class="w-24 bg-background border rounded px-2 py-1" :min="group.qty_min ?? 1"
+                    :max="group.qty_max ?? 1" :step="group.qty_step ?? 1" v-model.number="qty" />
+                  <button class="px-2 py-1 border rounded"
+                    @click="qty = Math.max(group.qty_min ?? 1, qty - (group.qty_step ?? 1))">-</button>
+                  <button class="px-2 py-1 border rounded"
+                    @click="qty = Math.min(group.qty_max ?? 1, qty + (group.qty_step ?? 1))">+</button>
                 </div>
               </div>
 
@@ -477,103 +575,64 @@ async function addToCart() {
                 </div>
 
                 <div class="relative h-2 rounded bg-muted overflow-hidden">
-                  <div
-                    class="absolute top-0 h-2 bg-primary/50"
-                    :style="{
-                      left: pct(group, selectedRange[group.id]?.min ?? group.slider_min) + '%',
-                      width:
-                        (pct(group, selectedRange[group.id]?.max ?? group.slider_max) -
-                          pct(group, selectedRange[group.id]?.min ?? group.slider_min)) + '%'
-                    }"
-                  />
+                  <div class="absolute top-0 h-2 bg-primary/50" :style="{
+                    left: pct(group, selectedRange[group.id]?.min ?? group.slider_min) + '%',
+                    width:
+                      (pct(group, selectedRange[group.id]?.max ?? group.slider_max) -
+                        pct(group, selectedRange[group.id]?.min ?? group.slider_min)) + '%'
+                  }" />
                   <template v-if="group.pricing_mode === 'tiered' && group.tiers?.length">
-                    <div
-                      v-for="(t, i) in group.tiers"
-                      :key="'from-' + i"
+                    <div v-for="(t, i) in group.tiers" :key="'from-' + i"
                       class="absolute top-[-6px] bottom-[-6px] w-px bg-foreground/40"
-                      :style="{ left: pct(group, t.from) + '%' }"
-                      :title="`Tier from ${t.from}`"
-                    />
-                    <div
-                      v-for="(t, i) in group.tiers"
-                      :key="'to-' + i"
+                      :style="{ left: pct(group, t.from) + '%' }" :title="`Tier from ${t.from}`" />
+                    <div v-for="(t, i) in group.tiers" :key="'to-' + i"
                       class="absolute top-[-6px] bottom-[-6px] w-px bg-foreground/40"
-                      :style="{ left: pct(group, t.to) + '%' }"
-                      :title="`Tier to ${t.to}`"
-                    />
+                      :style="{ left: pct(group, t.to) + '%' }" :title="`Tier to ${t.to}`" />
                   </template>
                 </div>
 
                 <div class="relative">
-                  <input
-                    type="range"
-                    class="w-full appearance-none bg-transparent absolute top-0 -translate-y-6  "
-                    :min="group.slider_min"
-                    :max="group.slider_max"
-                    :step="group.slider_step || 1"
+                  <input type="range" class="w-full appearance-none bg-transparent absolute top-0 -translate-y-6  "
+                    :min="group.slider_min" :max="group.slider_max" :step="group.slider_step || 1"
                     :value="selectedRange[group.id]?.min ?? group.slider_min"
                     @input="onRangeMinChange(group, Number(($event.target as HTMLInputElement).value))"
-                    style="position: relative; z-index: 20;"
-                  />
-                  <input
-                    type="range"
-                    class="w-full appearance-none bg-transparent absolute top-0 -translate-y-8  "
-                    :min="group.slider_min"
-                    :max="group.slider_max"
-                    :step="group.slider_step || 1"
+                    style="position: relative; z-index: 20;" />
+                  <input type="range" class="w-full appearance-none bg-transparent absolute top-0 -translate-y-8  "
+                    :min="group.slider_min" :max="group.slider_max" :step="group.slider_step || 1"
                     :value="selectedRange[group.id]?.max ?? group.slider_max"
                     @input="onRangeMaxChange(group, Number(($event.target as HTMLInputElement).value))"
-                    style="position: relative; z-index: 20;"
-                  />
+                    style="position: relative; z-index: 20;" />
                 </div>
 
                 <div class="mt-2 flex items-center gap-2">
                   <div class="flex items-center gap-2">
                     <label class="text-sm text-muted-foreground">From</label>
-                    <input
-                      type="number"
-                      class="w-24 bg-background border rounded px-2 py-1"
-                      :min="group.slider_min"
-                      :max="group.slider_max"
-                      :step="group.slider_step || 1"
+                    <input type="number" class="w-24 bg-background border rounded px-2 py-1" :min="group.slider_min"
+                      :max="group.slider_max" :step="group.slider_step || 1"
                       :value="selectedRange[group.id]?.min ?? group.slider_min"
-                      @input="onRangeMinChange(group, Number(($event.target as HTMLInputElement).value))"
-                    />
+                      @input="onRangeMinChange(group, Number(($event.target as HTMLInputElement).value))" />
                   </div>
 
                   <div class="flex items-center gap-2">
                     <label class="text-sm text-muted-foreground">To</label>
-                    <input
-                      type="number"
-                      class="w-24 bg-background border rounded px-2 py-1"
-                      :min="group.slider_min"
-                      :max="group.slider_max"
-                      :step="group.slider_step || 1"
+                    <input type="number" class="w-24 bg-background border rounded px-2 py-1" :min="group.slider_min"
+                      :max="group.slider_max" :step="group.slider_step || 1"
                       :value="selectedRange[group.id]?.max ?? group.slider_max"
-                      @input="onRangeMaxChange(group, Number(($event.target as HTMLInputElement).value))"
-                    />
+                      @input="onRangeMaxChange(group, Number(($event.target as HTMLInputElement).value))" />
                   </div>
 
                   <div class="ml-auto flex items-center gap-2">
-                    <button
-                      class="px-2 py-1 border rounded"
-                      @click="onRangeMinChange(group, (selectedRange[group.id]?.min ?? group.slider_min) - (group.slider_step || 1))"
-                    >–</button>
-                    <button
-                      class="px-2 py-1 border rounded"
-                      @click="onRangeMinChange(group, (selectedRange[group.id]?.min ?? group.slider_min) + (group.slider_step || 1))"
-                    >+</button>
+                    <button class="px-2 py-1 border rounded"
+                      @click="onRangeMinChange(group, (selectedRange[group.id]?.min ?? group.slider_min) - (group.slider_step || 1))">–</button>
+                    <button class="px-2 py-1 border rounded"
+                      @click="onRangeMinChange(group, (selectedRange[group.id]?.min ?? group.slider_min) + (group.slider_step || 1))">+</button>
 
                     <span class="opacity-30">|</span>
 
-                    <button
-                      class="px-2 py-1 border rounded"
-                      @click="onRangeMaxChange(group, (selectedRange[group.id]?.max ?? group.slider_max) - (group.slider_step || 1))"
-                    >–</button>
-                    <button
-                      class="px-2 py-1 border rounded"
-                      @click="onRangeMaxChange(group, (selectedRange[group.id]?.max ?? group.slider_max) + (group.slider_step || 1))"
-                    >+</button>
+                    <button class="px-2 py-1 border rounded"
+                      @click="onRangeMaxChange(group, (selectedRange[group.id]?.max ?? group.slider_max) - (group.slider_step || 1))">–</button>
+                    <button class="px-2 py-1 border rounded"
+                      @click="onRangeMaxChange(group, (selectedRange[group.id]?.max ?? group.slider_max) + (group.slider_step || 1))">+</button>
                   </div>
                 </div>
               </div>
