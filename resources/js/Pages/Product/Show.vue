@@ -45,6 +45,8 @@ function formatPrice(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((cents || 0) / 100)
 }
 
+const displayCents = computed(() => (qtyGroup ? unitCents.value : totalCents.value))
+
 async function addToCart() {
   errors.value = []
   triedToSubmit.value = true   // ← включаем подсветку required
@@ -93,7 +95,8 @@ async function addToCart() {
           <h1 class="text-3xl font-semibold">{{ product.name }}</h1>
 
           <div class="mt-2 text-2xl font-bold">
-            Unit: <span>{{ formatPrice(unitCents) }}</span>
+            {{ qtyGroup ? 'Unit' : 'Price' }}:
+            <span>{{ formatPrice(displayCents) }}</span>
             <template v-if="qtyGroup">
               → Total: <span class="text-primary">{{ formatPrice(totalCents) }}</span>
             </template>

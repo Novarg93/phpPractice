@@ -157,24 +157,42 @@ class CartController extends Controller
             $g = $groups->get($v->option_group_id);
             if (!$g) continue;
 
-            $isPerUnit = (bool)$g->multiply_by_qty;
+            $isPerUnit = (bool) $g->multiply_by_qty;
 
-            // аддитивные группы
+            // 0) Новый SELECTOR
+            if (in_array($g->type, [\App\Models\OptionGroup::TYPE_SELECTOR, 'selector'], true)) {
+                $mode = $g->pricing_mode === 'percent' ? 'percent' : 'absolute';
+
+                if ($mode === 'percent') {
+                    $p = (float) ($v->delta_percent ?? $v->value_percent ?? 0.0);
+                    $factor = 1.0 + ($p / 100.0);
+                    if ($isPerUnit) $mulUnit  *= $factor;
+                    else            $mulTotal *= $factor;
+                } else {
+                    $delta = (int) ($v->delta_cents ?? $v->price_delta_cents ?? 0);
+                    if ($isPerUnit) $addUnitAbs  += $delta;
+                    else            $addTotalAbs += $delta;
+                }
+                continue;
+            }
+
+            // 1) Легаси аддитив
             if (in_array($g->type, [
                 \App\Models\OptionGroup::TYPE_RADIO,
                 \App\Models\OptionGroup::TYPE_CHECKBOX,
             ], true)) {
-                if ($isPerUnit) $addUnitAbs  += (int)$v->price_delta_cents;
-                else            $addTotalAbs += (int)$v->price_delta_cents;
+                $delta = (int) ($v->price_delta_cents ?? 0);
+                if ($isPerUnit) $addUnitAbs  += $delta;
+                else            $addTotalAbs += $delta;
                 continue;
             }
 
-            // процентные группы
+            // 2) Легаси проценты
             if (in_array($g->type, [
                 \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
                 \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
             ], true)) {
-                $p = (float)($v->value_percent ?? 0.0);
+                $p = (float) ($v->value_percent ?? 0.0);
                 $factor = 1.0 + ($p / 100.0);
                 if ($isPerUnit) $mulUnit  *= $factor;
                 else            $mulTotal *= $factor;
@@ -318,6 +336,28 @@ class CartController extends Controller
 
         // (B) правила по типам
         foreach ($product->optionGroups as $g) {
+            // >>> NEW: selector (single/multi)
+            if (in_array($g->type, [\App\Models\OptionGroup::TYPE_SELECTOR, 'selector'], true)) {
+                $selected = $chosen->filter(fn($vid) => $g->values->contains('id', $vid));
+                $single = (($g->selection_mode ?? 'single') !== 'multi');
+
+                if ($single && $selected->count() > 1) {
+                    abort(422, 'Only one option can be selected in "' . $g->title . '".');
+                }
+
+                if ($g->is_required) {
+                    if ($single && $selected->count() !== 1) {
+                        abort(422, '"' . $g->title . '" is required.');
+                    }
+                    if (! $single && $selected->count() < 1) {
+                        abort(422, 'Select at least one in "' . $g->title . '".');
+                    }
+                }
+
+                continue;
+            }
+
+            // single (legacy radio / radio_percent)
             if (in_array($g->type, [
                 \App\Models\OptionGroup::TYPE_RADIO,
                 \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
@@ -329,7 +369,9 @@ class CartController extends Controller
                 if ($g->is_required && $selected->count() !== 1) {
                     abort(422, '"' . $g->title . '" is required.');
                 }
-            } elseif (in_array($g->type, [
+            }
+            // multi (legacy checkbox / checkbox_percent)
+            elseif (in_array($g->type, [
                 \App\Models\OptionGroup::TYPE_CHECKBOX,
                 \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
             ], true)) {
@@ -338,7 +380,8 @@ class CartController extends Controller
                     abort(422, 'Select at least one in "' . $g->title . '".');
                 }
             }
-            // quantity_slider и double_range_slider валидируем отдельно
+
+            // quantity_slider и double_range_slider валидируем отдельно (как и было)
         }
     }
 

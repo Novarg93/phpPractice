@@ -101,7 +101,7 @@ class ProductForm
                     ->minValue(0)
                     ->required(),
 
-                
+
 
                 Toggle::make('is_active')->default(true),
                 Toggle::make('track_inventory')
@@ -114,7 +114,7 @@ class ProductForm
                     ->nullable()
                     ->disabled(fn(callable $get): bool => ! $get('track_inventory')),
 
-                    TextInput::make('price_preview')                  // 👈 НОВОЕ
+                TextInput::make('price_preview')                  // 👈 НОВОЕ
                     ->label('Price preview (text)')
                     ->placeholder('$1 per 1M gold')
                     ->helperText('Показывается в каталоге и на карточке товара, если заполнено')
@@ -161,10 +161,11 @@ class ProductForm
                                             OptionGroup::TYPE_CHECKBOX_PERCENT => 'CheckboxPercent (+N%)',
                                             OptionGroup::TYPE_SLIDER           => 'QuantitySlider',
                                             OptionGroup::TYPE_RANGE            => 'DoubleRangeSlider',
+                                            OptionGroup::TYPE_SELECTOR         => 'Selector (single / multi)',
                                         ])
                                         ->native(false)
                                         ->required()
-                                        ->default(OptionGroup::TYPE_RADIO) // чтобы "Value (cents)" не прятался на пустом типе
+                                        ->default(OptionGroup::TYPE_RADIO)
                                         ->live()
                                         ->columnSpan(12),
 
@@ -173,10 +174,28 @@ class ProductForm
                                         ->inline(false)
                                         ->columnSpan(12),
 
+                                    Select::make('selection_mode')
+                                        ->label('Selection')
+                                        ->options(['single' => 'Single', 'multi' => 'Multi'])
+                                        ->visible(fn(callable $get) => $get('type') === OptionGroup::TYPE_SELECTOR)
+                                        ->required()
+                                        ->native(false)
+                                        ->columnSpan(6),
+
+                                    Select::make('pricing_mode')
+                                        ->label('Pricing')
+                                        ->options(['absolute' => 'Absolute (+N cents)', 'percent' => 'Percent (+N%)'])
+                                        ->visible(fn(callable $get) => $get('type') === OptionGroup::TYPE_SELECTOR)
+                                        ->required()
+                                        ->live()
+                                        ->native(false)
+                                        ->columnSpan(6),
+
+                                    // 👇 ОСТАВЛЯЕМ РОВНО ОДИН toggle
                                     Toggle::make('multiply_by_qty')
                                         ->label('Multiply by quantity')
-                                        ->helperText('Если включено — надбавка опции умножается на qty. Если выключено — добавляется один раз за заказ.')
-                                        ->visible(fn(callable $get) => $get('type') !== OptionGroup::TYPE_SLIDER && $get('type') !== OptionGroup::TYPE_RANGE)
+                                        ->helperText('Если включено — надбавка умножается на qty; если выключено — добавляется один раз на позицию.')
+                                        ->visible(fn(callable $get) => ! in_array($get('type'), [OptionGroup::TYPE_SLIDER, OptionGroup::TYPE_RANGE], true))
                                         ->default(false)
                                         ->columnSpan(12),
                                 ])->columnSpanFull(),
@@ -272,6 +291,50 @@ class ProductForm
                                             ->label('Option title')
                                             ->required()
                                             ->columnSpan(6),
+
+
+                                        // ----- ДЛЯ SELECTOR + ABSOLUTE -----
+                                        TextInput::make('delta_cents')
+                                            ->label('Value (cents)')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->default(0)
+                                            ->visible(fn(callable $get) => $get('../../type') === OptionGroup::TYPE_SELECTOR
+                                                && ($get('../../pricing_mode') ?? 'absolute') === 'absolute')
+                                            ->columnSpan(3),
+
+                                        // ----- ДЛЯ SELECTOR + PERCENT -----
+                                        TextInput::make('delta_percent')
+                                            ->label('Value (%)')
+                                            ->numeric()
+                                            ->rule('decimal:0,3')
+                                            ->default(null)
+                                            ->visible(fn(callable $get) => $get('../../type') === OptionGroup::TYPE_SELECTOR
+                                                && ($get('../../pricing_mode') ?? 'absolute') === 'percent')
+                                            ->columnSpan(3),
+
+                                        // ----- LEGACY additive (прячетcя при selector) -----
+                                        TextInput::make('price_delta_cents')
+                                            ->label('Value (cents)')
+                                            ->numeric()
+                                            ->default(0)
+                                            ->visible(fn(callable $get) => in_array(($get('../../type') ?? null), [
+                                                OptionGroup::TYPE_RADIO,
+                                                OptionGroup::TYPE_CHECKBOX,
+                                            ], true))
+                                            ->columnSpan(3),
+
+                                        // ----- LEGACY percent (прячетcя при selector) -----
+                                        TextInput::make('value_percent')
+                                            ->label('Value (%)')
+                                            ->numeric()
+                                            ->rule('decimal:0,3')
+                                            ->default(null)
+                                            ->visible(fn(callable $get) => in_array(($get('../../type') ?? null), [
+                                                OptionGroup::TYPE_RADIO_PERCENT,
+                                                OptionGroup::TYPE_CHECKBOX_PERCENT,
+                                            ], true))
+                                            ->columnSpan(3),
 
                                         // Аддитив: +N в валюте
                                         TextInput::make('price_delta_cents')
