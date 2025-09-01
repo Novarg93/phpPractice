@@ -106,7 +106,7 @@ async function removeItem(item: CartItem) {
                 <div v-for="item in items" :key="item.id" class="flex items-center gap-4 border rounded-lg p-4">
                     <img v-if="item.product.image_url" :src="item.product.image_url" alt=""
                         class="w-20 h-20 object-cover rounded" />
-                    <div class="flex-1">
+                    <div class="flex-1   min-h-20">
                         <div class="font-medium">{{ item.product.name }}</div>
                         <div v-if="item.options && item.options.length" class="text-sm text-muted-foreground">
                             <ul class="list-disc pl-5 space-y-0.5">
