@@ -1,14 +1,13 @@
-<!-- src/components/product/groups/ChoiceGroup.vue -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ChoiceGroup as TChoiceGroup, OptionItem } from '@/types/product-options'
+import type { SelectorGroup, OptionItem } from '@/types/product-options'
 
-const props = defineProps<{ group: TChoiceGroup }>()
+const props = defineProps<{ group: SelectorGroup }>()
 // number | number[] | null
 const selected = defineModel<number | number[] | null>('selected')
 
-const isRadio = computed(() => props.group.type.startsWith('radio'))
-const isPercent = computed(() => props.group.type.endsWith('percent'))
+const isRadio = computed(() => props.group.selection_mode === 'single')
+const isPercent = computed(() => props.group.pricing_mode === 'percent')
 
 function fmtCents(cents?: number | null) {
   const v = (cents ?? 0) / 100
@@ -24,15 +23,10 @@ function isChecked(v: OptionItem) {
 function onRadioPick(id: number) {
   selected.value = id
 }
-
 function onCheckboxToggle(id: number, checked: boolean) {
   const arr = Array.isArray(selected.value) ? [...(selected.value as number[])] : []
-  if (checked) {
-    if (!arr.includes(id)) arr.push(id)
-  } else {
-    const i = arr.indexOf(id)
-    if (i >= 0) arr.splice(i, 1)
-  }
+  if (checked) { if (!arr.includes(id)) arr.push(id) }
+  else { const i = arr.indexOf(id); if (i>=0) arr.splice(i,1) }
   selected.value = arr
 }
 </script>
@@ -44,11 +38,7 @@ function onCheckboxToggle(id: number, checked: boolean) {
       <span v-if="group.is_required" class="text-xs text-muted-foreground">(required)</span>
     </div>
 
-    <label
-      v-for="v in group.values"
-      :key="v.id"
-      class="flex items-center gap-2 cursor-pointer"
-    >
+    <label v-for="v in group.values" :key="v.id" class="flex items-center gap-2 cursor-pointer">
       <input
         v-if="isRadio"
         type="radio"
@@ -67,10 +57,10 @@ function onCheckboxToggle(id: number, checked: boolean) {
 
       <span class="ml-auto text-sm text-muted-foreground">
         <template v-if="isPercent">
-          +{{ v.value_percent ?? 0 }}%
+          +{{ v.delta_percent ?? 0 }}%
         </template>
         <template v-else>
-          {{ (v.price_delta_cents ?? 0) >= 0 ? '+' : '' }}{{ fmtCents(v.price_delta_cents ?? 0) }}
+          {{ (v.delta_cents ?? 0) >= 0 ? '+' : '' }}{{ fmtCents(v.delta_cents ?? 0) }}
         </template>
       </span>
     </label>

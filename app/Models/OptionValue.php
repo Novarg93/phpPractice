@@ -10,13 +10,23 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class OptionValue extends Model
 {
     protected $fillable = [
-        'option_group_id','title','price_delta_cents','value_percent','is_active','is_default','position',
+        'option_group_id',
+        'title',
+        'price_delta_cents',
+        'value_percent',
+        'is_active',
+        'is_default',
+        'position',
+        'delta_cents',
+        'delta_percent',
     ];
 
     protected $casts = [
         'is_active'   => 'bool',
         'is_default'  => 'bool',
         'value_percent' => 'float',
+        'delta_cents' => 'integer',
+        'delta_percent' => 'float',
     ];
 
     public function group(): BelongsTo
@@ -27,11 +37,11 @@ class OptionValue extends Model
     protected static function booted()
     {
         static::saving(function (OptionValue $value) {
-            
+
             if ($value->is_default) {
-                $group = $value->group()->first(); 
+                $group = $value->group()->first();
                 if ($group && $group->type === OptionGroup::TYPE_RADIO) {
-                    
+
                     static::where('option_group_id', $value->option_group_id)
                         ->when($value->exists, fn($q) => $q->where('id', '!=', $value->id))
                         ->update(['is_default' => false]);

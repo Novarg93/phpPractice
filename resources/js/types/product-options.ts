@@ -1,30 +1,16 @@
 import type { Product } from '@/types'
 
 export type ProductWithGroups = Product & {
-  option_groups?: Array<ChoiceGroup | QtyGroup | DoubleRangeGroup>
+  option_groups?: Array<SelectorGroup | QtyGroup | DoubleRangeGroup>
 }
-
-export type GroupKind =
-  | 'radio_additive'
-  | 'checkbox_additive'
-  | 'radio_percent'
-  | 'checkbox_percent'
-  | 'quantity_slider'
-  | 'double_range_slider'
-
-export type ChoiceKind =
-  | 'radio_additive'
-  | 'checkbox_additive'
-  | 'radio_percent'
-  | 'checkbox_percent'
 
 export type Currency = 'USD' | 'EUR' | 'GBP' | string
 
 export interface OptionItem {
   id: number
   title: string
-  price_delta_cents?: number | null
-  value_percent?: number | null
+  delta_cents?: number | null
+  delta_percent?: number | null
   is_default?: boolean
   is_active?: boolean
 }
@@ -35,8 +21,10 @@ interface BaseGroup {
   is_required?: boolean
 }
 
-export interface ChoiceGroup extends BaseGroup {
-  type: ChoiceKind
+export interface SelectorGroup extends BaseGroup {
+  type: 'selector'
+  selection_mode: 'single' | 'multi'
+  pricing_mode: 'absolute' | 'percent'
   multiply_by_qty?: boolean
   values: OptionItem[]
 }
@@ -50,8 +38,7 @@ export interface QtyGroup extends BaseGroup {
 }
 
 export interface RangeTier {
-  from: number
-  to: number
+  from: number; to: number
   unit_price_cents: number
   label?: string
   min_block?: number
@@ -74,13 +61,11 @@ export interface DoubleRangeGroup extends BaseGroup {
   tiers?: RangeTier[]
 }
 
-export type AnyGroup = ChoiceGroup | QtyGroup | DoubleRangeGroup
+export type AnyGroup = SelectorGroup | QtyGroup | DoubleRangeGroup
 
-// общее состояние выбора одной группы
 export type Selection =
-  | number            // radio id
-  | number[]          // checkbox ids
+  | number               // selector (single) id
+  | number[]             // selector (multi) ids
   | { min: number; max: number } // range
-  | null              // пусто
-  | number            // qty value (для удобства — то же число)
-
+  | null
+  | number               // qty value
