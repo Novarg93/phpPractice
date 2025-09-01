@@ -26,6 +26,17 @@ type CartItem = {
     unit_price_cents: number
     line_total_cents: number
     range_labels?: string[]
+    options?: ItemOption[]
+    has_qty_slider?: boolean
+}
+
+type ItemOption = {
+    id: number
+    title: string
+    calc_mode: 'absolute' | 'percent'
+    scope: 'unit' | 'total'
+    value_cents?: number | null
+    value_percent?: number | null
 }
 
 const props = defineProps<{
@@ -90,21 +101,39 @@ async function removeItem(item: CartItem) {
                 </BreadcrumbList>
             </Breadcrumb>
             <h1 class="text-3xl font-semibold my-6">Your Cart</h1>
-             
+
             <div v-if="items.length" class="space-y-4">
                 <div v-for="item in items" :key="item.id" class="flex items-center gap-4 border rounded-lg p-4">
                     <img v-if="item.product.image_url" :src="item.product.image_url" alt=""
                         class="w-20 h-20 object-cover rounded" />
                     <div class="flex-1">
                         <div class="font-medium">{{ item.product.name }}</div>
-                        <div v-if="item.range_labels && item.range_labels.length" class="text-sm">
+                        <div v-if="item.options && item.options.length" class="text-sm text-muted-foreground">
+                            <ul class="list-disc pl-5 space-y-0.5">
+                                <li v-for="opt in item.options" :key="opt.id">
+                                    <span class="font-medium">{{ opt.title }}</span>
+                                    <span class="ml-1">
+                                        (
+                                        <template v-if="opt.calc_mode === 'percent'">
+                                            +{{ opt.value_percent ?? 0 }}% {{ opt.scope }}
+                                        </template>
+                                        <template v-else>
+                                            {{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(opt.value_cents
+                                                ?? 0) }} {{ opt.scope }}
+                                        </template>
+                                        )
+                                    </span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div v-if="item.range_labels && item.range_labels.length" class="text-sm text-muted-foreground">
                             {{ item.range_labels.join(', ') }}
                         </div>
-                        <div class="text-sm text-muted-foreground">
+                        <div v-if="item.has_qty_slider" class="text-sm text-muted-foreground">
                             {{ formatPrice(item.unit_price_cents) }} / each
                         </div>
 
-                        <div class="flex items-center gap-2 mt-2">
+                        <div v-if="item.has_qty_slider" class="flex items-center gap-2 mt-2">
 
                             <span>Quantity: {{ item.qty }}</span>
 

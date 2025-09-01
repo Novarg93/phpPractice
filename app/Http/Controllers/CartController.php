@@ -141,6 +141,74 @@ class CartController extends Controller
         return (int)$sum;
     }
 
+    private function computeUnitAndTotalCents(int $productId, array $optionValueIds, array $rangeSelections, int $qty): array
+    {
+        $product   = $this->productWithGroups($productId);
+        $groups    = $product->optionGroups->keyBy('id');      // [group_id => OptionGroup]
+        $values    = \App\Models\OptionValue::whereIn('id', $optionValueIds)->get();
+
+        // --- агрегаторы ---
+        $addUnitAbs   = 0;   // аддитив к юниту
+        $mulUnit      = 1.0; // проценты к юниту (мультипликативно)
+        $addTotalAbs  = 0;   // аддитив к итогу позиции
+        $mulTotal     = 1.0; // проценты к итогу позиции (мультипликативно)
+
+        foreach ($values as $v) {
+            $g = $groups->get($v->option_group_id);
+            if (!$g) continue;
+
+            $isPerUnit = (bool)$g->multiply_by_qty;
+
+            // аддитивные группы
+            if (in_array($g->type, [
+                \App\Models\OptionGroup::TYPE_RADIO,
+                \App\Models\OptionGroup::TYPE_CHECKBOX,
+            ], true)) {
+                if ($isPerUnit) $addUnitAbs  += (int)$v->price_delta_cents;
+                else            $addTotalAbs += (int)$v->price_delta_cents;
+                continue;
+            }
+
+            // процентные группы
+            if (in_array($g->type, [
+                \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
+                \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
+            ], true)) {
+                $p = (float)($v->value_percent ?? 0.0);
+                $factor = 1.0 + ($p / 100.0);
+                if ($isPerUnit) $mulUnit  *= $factor;
+                else            $mulTotal *= $factor;
+                continue;
+            }
+        }
+
+        // per-unit delta для range
+        $deltaRangePerUnit = $this->computeRangePerUnitDelta($product, $rangeSelections);
+
+        // --- unit price ---
+        $unitBase = (int)$product->price_cents + $addUnitAbs + $deltaRangePerUnit;
+        $unit     = (int) round($unitBase * $mulUnit);
+
+        // --- total line ---
+        $subtotal       = $unit * max(1, $qty);
+        $beforePercent  = $subtotal + $addTotalAbs;
+        $lineTotal      = (int) round($beforePercent * $mulTotal);
+
+        return [
+            'unit'       => $unit,
+            'line_total' => $lineTotal,
+            'breakdown'  => [
+                'base'            => (int)$product->price_cents,
+                'addUnitAbs'      => $addUnitAbs,
+                'mulUnit'         => $mulUnit,
+                'rangePerUnit'    => $deltaRangePerUnit,
+                'qty'             => $qty,
+                'addTotalAbs'     => $addTotalAbs,
+                'mulTotal'        => $mulTotal,
+            ],
+        ];
+    }
+
     /** piecewise ценообразование по тировым интервалам */
     private function priceTiered(int $selMin, int $selMax, int $baseMin, array $tiers, string $strategy): int
     {
@@ -242,7 +310,7 @@ class CartController extends Controller
         $product = $this->productWithGroups($productId);
         $chosen  = collect($optionValueIds);
 
-        // (A) каждый value — относится к продукту
+        // (A) каждый value относится к продукту
         foreach ($chosen as $vid) {
             $belongs = $product->optionGroups->first(fn($g) => $g->values->contains('id', $vid));
             abort_unless($belongs, 422, 'Invalid option value selected.');
@@ -250,7 +318,10 @@ class CartController extends Controller
 
         // (B) правила по типам
         foreach ($product->optionGroups as $g) {
-            if ($g->type === OptionGroup::TYPE_RADIO) {
+            if (in_array($g->type, [
+                \App\Models\OptionGroup::TYPE_RADIO,
+                \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
+            ], true)) {
                 $selected = $chosen->filter(fn($vid) => $g->values->contains('id', $vid));
                 if ($selected->count() > 1) {
                     abort(422, 'Only one option can be selected in "' . $g->title . '".');
@@ -258,13 +329,16 @@ class CartController extends Controller
                 if ($g->is_required && $selected->count() !== 1) {
                     abort(422, '"' . $g->title . '" is required.');
                 }
-            } elseif ($g->type === OptionGroup::TYPE_CHECKBOX) {
+            } elseif (in_array($g->type, [
+                \App\Models\OptionGroup::TYPE_CHECKBOX,
+                \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
+            ], true)) {
                 $selected = $chosen->filter(fn($vid) => $g->values->contains('id', $vid));
                 if ($g->is_required && $selected->count() < 1) {
                     abort(422, 'Select at least one in "' . $g->title . '".');
                 }
             }
-            // quantity_slider и double_range_slider валидируем отдельно (ниже)
+            // quantity_slider и double_range_slider валидируем отдельно
         }
     }
 
@@ -370,13 +444,43 @@ class CartController extends Controller
 
             return Inertia::render('Cart/Index', [
                 'items' => collect($items)->map(function ($i) {
-                    $p = Product::find($i['product_id']);
+                    $p = \App\Models\Product::with('optionGroups')->find($i['product_id']);
 
-                    // ⬇️ соберём подписи диапазонов из сессии
+                    $hasQtySlider = (bool) ($p?->optionGroups
+                        ->contains('type', \App\Models\OptionGroup::TYPE_SLIDER) ?? false);
+
+                    // ⬇️ подписи диапазонов
                     $rangeLabels = collect($i['range_options'] ?? [])
                         ->map(fn($r) => ((int)$r['selected_min']) . '-' . ((int)$r['selected_max']))
                         ->values()
                         ->all();
+
+                    // ⬇️ выбранные option values (аддитив/процент)
+                    $vals = \App\Models\OptionValue::with('group')
+                        ->whereIn('id', $i['option_value_ids'] ?? [])
+                        ->get()
+                        ->filter(fn($v) => $v->group) // защита
+                        ->sortBy([
+                            fn($v) => $v->group->position ?? 0,
+                            fn($v) => $v->position ?? 0,
+                        ]);
+
+                    $optionLabels = $vals->map(function ($v) {
+                        $g = $v->group;
+                        $isPercent = in_array($g->type ?? null, [
+                            \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
+                            \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
+                        ], true);
+
+                        return [
+                            'id'            => $v->id,
+                            'title'         => $v->title,
+                            'calc_mode'     => $isPercent ? 'percent' : 'absolute',
+                            'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
+                            'value_cents'   => (int) $v->price_delta_cents,
+                            'value_percent' => $v->value_percent !== null ? (float)$v->value_percent : null,
+                        ];
+                    })->values()->all();
 
                     return [
                         'id' => $i['id'],
@@ -388,8 +492,9 @@ class CartController extends Controller
                         'qty' => $i['qty'],
                         'unit_price_cents' => $i['unit_price_cents'],
                         'line_total_cents' => $i['line_total_cents'],
-                        // ⬇️ новое поле
                         'range_labels' => $rangeLabels,
+                        'options' => $optionLabels,
+                        'has_qty_slider' => $hasQtySlider,
                     ];
                 })->values(),
                 'total_qty' => $totalQty,
@@ -397,15 +502,45 @@ class CartController extends Controller
             ]);
         }
 
-        $cart = $this->getUserCart($request)->load(['items.product', 'items.options']);
+        $cart = $this->getUserCart($request)->load([
+            'items.product.optionGroups',        // 👈 добавили
+            'items.options.optionValue.group',
+        ]);
 
         return Inertia::render('Cart/Index', [
             'items' => $cart->items->map(function ($item) {
+                $hasQtySlider = (bool) $item->product->optionGroups
+                    ->contains('type', \App\Models\OptionGroup::TYPE_SLIDER);
                 $rangeLabels = $item->options
-                    // раньше было: ->whereNull('option_value_id')
-                    // делаем устойчивее:
                     ->filter(fn($o) => !is_null($o->option_group_id))
                     ->map(fn($o) => ((int)$o->selected_min) . '-' . ((int)$o->selected_max))
+                    ->values()
+                    ->all();
+
+                // ⬇️ опции из option_value_id (аддитив/процент)
+                $optionLabels = $item->options
+                    ->filter(fn($o) => $o->option_value_id && $o->optionValue && $o->optionValue->group)
+                    ->sortBy([
+                        fn($o) => $o->optionValue->group->position ?? 0,
+                        fn($o) => $o->optionValue->position ?? 0,
+                    ])
+                    ->map(function ($o) {
+                        $v = $o->optionValue;
+                        $g = $v->group;
+                        $isPercent = in_array($g->type ?? null, [
+                            \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
+                            \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
+                        ], true);
+
+                        return [
+                            'id'            => $v->id,
+                            'title'         => $v->title,
+                            'calc_mode'     => $isPercent ? 'percent' : 'absolute',
+                            'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
+                            'value_cents'   => (int) $v->price_delta_cents,
+                            'value_percent' => $v->value_percent !== null ? (float)$v->value_percent : null,
+                        ];
+                    })
                     ->values()
                     ->all();
 
@@ -420,6 +555,8 @@ class CartController extends Controller
                     'unit_price_cents' => $item->unit_price_cents,
                     'line_total_cents' => $item->line_total_cents,
                     'range_labels' => $rangeLabels,
+                    'options' => $optionLabels,
+                    'has_qty_slider' => $hasQtySlider,
                 ];
             })->values(),
             'total_qty' => $cart->items->count(),
@@ -432,12 +569,11 @@ class CartController extends Controller
     public function add(Request $request)
     {
         $data = $request->validate([
-            'product_id'        => ['required', 'integer', 'exists:products,id'],
-            'qty'               => ['nullable', 'integer', 'min:1'],
-            'option_value_ids'  => ['array'],
+            'product_id'         => ['required', 'integer', 'exists:products,id'],
+            'qty'                => ['nullable', 'integer', 'min:1'],
+            'option_value_ids'   => ['array'],
             'option_value_ids.*' => ['integer', 'exists:option_values,id'],
-            // 👇 новые данные для double_range_slider
-            'range_options'     => ['array'],
+            'range_options'      => ['array'],
             'range_options.*.option_group_id' => ['required', 'integer', 'exists:option_groups,id'],
             'range_options.*.selected_min'    => ['required', 'integer'],
             'range_options.*.selected_max'    => ['required', 'integer'],
@@ -446,26 +582,28 @@ class CartController extends Controller
         $optionIds = $this->normalizeOptionIds($data['option_value_ids'] ?? []);
         $this->validateSelection($data['product_id'], $optionIds);
 
-        // валидируем диапазоны
         $rangeList = $this->validateRangeSelections($data['product_id'], $data['range_options'] ?? []);
-
-        // qty c учётом quantity_slider
         $qty = $this->validateAndResolveQty($data['product_id'], $data['qty'] ?? null);
 
-        // unit price с учётом value-прибавок (per-unit) и range (per-unit)
-        $unit = $this->computeUnitPriceCents($data['product_id'], $optionIds, $rangeList);
+        // ⬇️ новый расчёт (unit + total с %)
+        $pricing = $this->computeUnitAndTotalCents(
+            $data['product_id'],
+            $optionIds,
+            $rangeList,
+            $qty
+        );
 
         if ($this->isGuest($request)) {
             $items = $this->getGuestCart($request);
 
             $items[] = [
-                'id' => (string) Str::uuid(),
-                'product_id' => $data['product_id'],
-                'qty' => $qty,
-                'unit_price_cents' => $unit,
-                'line_total_cents' => $unit * $qty,
-                'option_value_ids' => $optionIds,
-                'range_options'    => $rangeList, // 👈 сохраним в сессию
+                'id' => (string) \Illuminate\Support\Str::uuid(),
+                'product_id'        => $data['product_id'],
+                'qty'               => $qty,
+                'unit_price_cents'  => $pricing['unit'],
+                'line_total_cents'  => $pricing['line_total'],     // 👈 уже с per-order и % на итог
+                'option_value_ids'  => $optionIds,
+                'range_options'     => $rangeList,
             ];
 
             $this->saveGuestCart($request, $items);
@@ -479,27 +617,28 @@ class CartController extends Controller
         $cart = $this->getUserCart($request);
 
         $new = $cart->items()->create([
-            'product_id' => $data['product_id'],
-            'qty' => $qty,
-            'unit_price_cents' => $unit,
-            'line_total_cents' => $unit * $qty,
+            'product_id'        => $data['product_id'],
+            'qty'               => $qty,
+            'unit_price_cents'  => $pricing['unit'],
+            'line_total_cents'  => $pricing['line_total'],        // 👈 уже с per-order и %
         ]);
 
+        // сохраним выбранные option_values (и аддитивные, и процентные)
         foreach ($optionIds as $vid) {
             $new->options()->create(['option_value_id' => $vid]);
         }
 
-        // сохраним диапазоны в отдельной таблице
+        // сохраним диапазоны (как и раньше)
         $productLoaded = $this->productWithGroups($data['product_id']);
         foreach ($rangeList as $row) {
-            $deltaForOne = $this->computeRangePerUnitDelta($productLoaded, [$row]);
+            $deltaForOne = $this->computeRangePerUnitDelta($productLoaded, [$row]); // per-unit delta
 
             $new->options()->create([
-                'option_value_id'   => null, // признак: это запись-диапазон
+                'option_value_id'   => null, // признак: диапазонная запись
                 'option_group_id'   => $row['option_group_id'],
                 'selected_min'      => $row['selected_min'],
                 'selected_max'      => $row['selected_max'],
-                'price_delta_cents' => $deltaForOne, // per-unit дельта для этого диапазона
+                'price_delta_cents' => $deltaForOne,
                 'payload_json'      => [
                     'pricing_mode'          => $productLoaded->optionGroups
                         ->firstWhere('id', $row['option_group_id'])->pricing_mode ?? null,

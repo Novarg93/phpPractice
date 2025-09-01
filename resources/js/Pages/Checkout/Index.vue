@@ -4,7 +4,15 @@ import { loadStripe } from '@stripe/stripe-js'
 import axios from 'axios'
 import { useCartSummary } from '@/composables/useCartSummary'
 
-type ItemOption = { id: number; title: string; price_delta_cents: number }
+type ItemOption = {
+  id: number
+  title: string
+  calc_mode: 'absolute' | 'percent'
+  scope: 'unit' | 'total'
+  value_cents?: number | null
+  value_percent?: number | null
+}
+
 type Item = {
   id: number
   product: { id: number; name: string; image_url?: string | null }
@@ -13,6 +21,7 @@ type Item = {
   line_total_cents: number
   options?: ItemOption[]
   range_labels?: string[]
+  has_qty_slider?: boolean
 }
 
 const props = defineProps<{
@@ -56,16 +65,30 @@ async function goToStripe() {
                 <div v-if="i.range_labels?.length" class="text-xs text-muted-foreground">
                   {{ i.range_labels.join(', ') }}
                 </div>
-                <div class="text-xs text-muted-foreground">Qty: {{ i.qty }}</div>
+                <div v-if="i.has_qty_slider" class="text-xs text-muted-foreground">Qty: {{ i.qty }}</div>
                 <div v-if="i.options?.length" class="mt-1 text-xs text-muted-foreground">
-                  <div v-for="opt in i.options" :key="opt.id" class="flex justify-between">
-                    <span>• {{ opt.title }}</span>
-                    <span>{{ opt.price_delta_cents >= 0 ? '+' : '' }}{{ formatPrice(opt.price_delta_cents) }}</span>
-                  </div>
+                  <ul class="list-disc pl-5 space-y-0.5">
+                    <li v-for="opt in i.options" :key="opt.id">
+                      <span class="font-medium">{{ opt.title }}</span>
+                      <span class="ml-1">
+                        (
+                        <template v-if="opt.calc_mode === 'percent'">
+                          +{{ opt.value_percent ?? 0 }}% {{ opt.scope }}
+                        </template>
+                        <template v-else>
+                          {{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(opt.value_cents ?? 0) }} {{
+                            opt.scope }}
+                        </template>
+                        )
+                      </span>
+                    </li>
+                  </ul>
                 </div>
               </div>
               <div class="text-right">
-                <div class="text-sm">{{ formatPrice(i.unit_price_cents) }} / each</div>
+                <div v-if="i.has_qty_slider" class="text-sm">
+                  {{ formatPrice(i.unit_price_cents) }} / each
+                </div>
                 <div class="font-semibold">{{ formatPrice(i.line_total_cents) }}</div>
               </div>
             </div>

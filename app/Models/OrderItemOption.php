@@ -21,7 +21,16 @@ class OrderItemOption extends Model
     protected $casts = [
         'payload_json' => 'array',
     ];
-
-    public function item(): BelongsTo { return $this->belongsTo(OrderItem::class); }
-    public function group(): BelongsTo { return $this->belongsTo(OptionGroup::class, 'option_group_id'); }
+    public function optionValue(): BelongsTo
+    {
+        return $this->belongsTo(OptionValue::class, 'option_value_id');
+    }
+    public function item(): BelongsTo
+    {
+        return $this->belongsTo(OrderItem::class);
+    }
+    public function group(): BelongsTo
+    {
+        return $this->belongsTo(OptionGroup::class, 'option_group_id');
+    }
 }

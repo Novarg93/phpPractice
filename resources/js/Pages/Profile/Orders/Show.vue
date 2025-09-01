@@ -15,8 +15,16 @@ const props = defineProps<{
       unit_price_cents: number
       line_total_cents: number
       image_url?: string
-      options?: Array<{ title: string; price_delta_cents: number }>
+      options?: Array<{
+        id: number
+        title: string
+        calc_mode: 'absolute' | 'percent'
+        scope: 'unit' | 'total'
+        value_cents?: number | null
+        value_percent?: number | null
+      }>
       ranges?: Array<{ title: string; label: string }>
+      has_qty_slider?: boolean
     }>
   }
 }>()
@@ -29,23 +37,37 @@ function formatPrice(cents: number) {
 <template>
   <DefaultLayout>
     <section class="w-[90%] 2xl:w-[75%] mx-auto py-8">
-      <h1 class="text-3xl font-semibold mb-6">Order #{{ order.id }}</h1>      
+      <h1 class="text-3xl font-semibold mb-6">Order #{{ order.id }}</h1>
       <div class="grid lg:grid-cols-3 gap-6">
         <!-- items -->
         <div class="lg:col-span-2 space-y-3">
           <div v-for="it in order.items" :key="it.product_name"
             class="border border-border rounded-lg p-4 flex justify-between">
             <div class="flex items-center gap-4">
-              <img v-if="it.image_url" class="w-16 h-16 object-cover rounded" :src="it.image_url" :alt="it.product_name">
+              <img v-if="it.image_url" class="w-16 h-16 object-cover rounded" :src="it.image_url"
+                :alt="it.product_name">
               <div>
                 <div class="font-medium">{{ it.product_name }}</div>
 
+
                 <!-- value options -->
                 <div v-if="it.options?.length" class="text-sm text-muted-foreground">
-                  <div v-for="opt in it.options" :key="opt.title">
-                    • {{ opt.title }} 
-                    <span v-if="opt.price_delta_cents">({{ formatPrice(opt.price_delta_cents) }})</span>
-                  </div>
+                  <ul class="list-disc pl-5 space-y-0.5">
+                    <li v-for="opt in it.options" :key="opt.id">
+                      <span class="font-medium">{{ opt.title }}</span>
+                      <span class="ml-1">
+                        (
+                        <template v-if="opt.calc_mode === 'percent'">
+                          +{{ opt.value_percent ?? 0 }}% {{ opt.scope }}
+                        </template>
+                        <template v-else>
+                          {{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(opt.value_cents ?? 0) }} {{
+                            opt.scope }}
+                        </template>
+                        )
+                      </span>
+                    </li>
+                  </ul>
                 </div>
 
                 <!-- range options -->
@@ -56,9 +78,10 @@ function formatPrice(cents: number) {
                 </div>
 
                 <!-- qty + price -->
-                <div class="text-sm text-muted-foreground mt-1">
+
+                <template v-if="it.has_qty_slider">
                   Qty: {{ it.qty }} · {{ formatPrice(it.unit_price_cents) }}/each
-                </div>
+                </template>
               </div>
             </div>
             <div class="font-semibold">{{ formatPrice(it.line_total_cents) }}</div>

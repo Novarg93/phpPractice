@@ -15,27 +15,52 @@ class CheckoutController extends Controller
     public function index(Request $request)
     {
         $cart = Cart::firstOrCreate(['user_id' => $request->user()->id])
-            ->load(['items.product', 'items.options']);
+            ->load([
+                'items.product.optionGroups',        // 👈 чтобы знать есть ли qty slider
+                'items.options.optionValue.group',   // 👈 чтобы знать тип группы и %/unit/total
+            ]);
 
         abort_if($cart->items->isEmpty(), 404, 'Your cart is empty.');
 
-        $allOptionIds = $cart->items
-            ->flatMap(fn($i) => $i->options->pluck('option_value_id'))
-            ->filter() // отбрасываем null (диапазонные)
-            ->unique()
-            ->values();
-
-        $optionMap = OptionValue::whereIn('id', $allOptionIds)->get()->keyBy('id');
-
         return Inertia::render('Checkout/Index', [
             'stripePk' => config('services.stripe.key'),
-            'items' => $cart->items->map(function ($i) use ($optionMap) {
-                // ⬇️ собираем подписи диапазонов
+            'items' => $cart->items->map(function ($i) {
+                // диапазоны (как было)
                 $rangeLabels = $i->options
                     ->filter(fn($o) => !is_null($o->option_group_id))
                     ->map(fn($o) => ((int)$o->selected_min) . '-' . ((int)$o->selected_max))
                     ->values()
                     ->all();
+
+                // выбранные value-опции (аддитив/процент) — как в корзине
+                $optionLabels = $i->options
+                    ->filter(fn($o) => $o->option_value_id && $o->optionValue && $o->optionValue->group)
+                    ->sortBy([
+                        fn($o) => $o->optionValue->group->position ?? 0,
+                        fn($o) => $o->optionValue->position ?? 0,
+                    ])
+                    ->map(function ($o) {
+                        $v = $o->optionValue;
+                        $g = $v->group;
+                        $isPercent = in_array($g->type ?? null, [
+                            \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
+                            \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
+                        ], true);
+
+                        return [
+                            'id'            => $v->id,
+                            'title'         => $v->title,
+                            'calc_mode'     => $isPercent ? 'percent' : 'absolute',
+                            'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
+                            'value_cents'   => (int) $v->price_delta_cents,
+                            'value_percent' => $v->value_percent !== null ? (float)$v->value_percent : null,
+                        ];
+                    })
+                    ->values()
+                    ->all();
+
+                $hasQtySlider = (bool) $i->product->optionGroups
+                    ->contains('type', \App\Models\OptionGroup::TYPE_SLIDER);
 
                 return [
                     'id' => $i->id,
@@ -47,18 +72,9 @@ class CheckoutController extends Controller
                     'qty' => $i->qty,
                     'unit_price_cents' => $i->unit_price_cents,
                     'line_total_cents' => $i->line_total_cents,
-                    'options' => $i->options
-                        ->filter(fn($opt) => !is_null($opt->option_value_id)) // только value-опции
-                        ->map(function ($opt) use ($optionMap) {
-                            $ov = $optionMap->get($opt->option_value_id);
-                            return [
-                                'id' => $opt->option_value_id,
-                                'title' => $ov?->title ?? 'Option',
-                                'price_delta_cents' => (int)($ov?->price_delta_cents ?? 0),
-                            ];
-                        })
-                        ->values(),
-                    'range_labels' => $rangeLabels, // ⬅️ новое поле в ответ
+                    'options' => $optionLabels,   // 👈 нормализованные опции
+                    'range_labels' => $rangeLabels,
+                    'has_qty_slider' => $hasQtySlider, // 👈 для "/ each"
                 ];
             })->values(),
             'totals' => [

@@ -33,7 +33,11 @@ class OrderController extends Controller
         $this->authorize('view', $order);
 
         // Загружаем вместе с options и group (чтобы был доступ к title)
-        $order->load('items.product', 'items.options.group');
+        $order->load(
+            'items.product.optionGroups',
+            'items.options.optionValue.group',
+            'items.options.group' 
+        );
 
         return Inertia::render('Profile/Orders/Show', [
             'order' => [
@@ -45,13 +49,30 @@ class OrderController extends Controller
                 'shipping_address' => $order->shipping_address,
 
                 'items' => $order->items->map(function ($i) {
-                    // value-опции (radio/checkbox)
+                    // value-опции (radio/checkbox): как в корзине/чекауте
                     $valueOptions = $i->options
-                        ->filter(fn($o) => !is_null($o->option_value_id))
-                        ->map(fn($o) => [
-                            'title' => $o->title,
-                            'price_delta_cents' => $o->price_delta_cents,
+                        ->filter(fn($o) => $o->option_value_id && $o->optionValue && $o->optionValue->group)
+                        ->sortBy([
+                            fn($o) => $o->optionValue->group->position ?? 0,
+                            fn($o) => $o->optionValue->position ?? 0,
                         ])
+                        ->map(function ($o) {
+                            $v = $o->optionValue;
+                            $g = $v->group;
+                            $isPercent = in_array($g->type ?? null, [
+                                \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
+                                \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
+                            ], true);
+
+                            return [
+                                'id'            => $v->id,
+                                'title'         => $v->title,
+                                'calc_mode'     => $isPercent ? 'percent' : 'absolute',
+                                'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
+                                'value_cents'   => (int) $v->price_delta_cents,
+                                'value_percent' => $v->value_percent !== null ? (float)$v->value_percent : null,
+                            ];
+                        })
                         ->values();
 
                     // range-опции (double_range_slider)
@@ -63,14 +84,20 @@ class OrderController extends Controller
                         ])
                         ->values();
 
+                    $hasQtySlider = (bool) $i->product?->optionGroups
+                        ->contains('type', \App\Models\OptionGroup::TYPE_SLIDER);
+
                     return [
                         'product_name' => $i->product_name,
                         'image_url' => $i->product?->image_url,
                         'qty' => $i->qty,
                         'unit_price_cents' => $i->unit_price_cents,
                         'line_total_cents' => $i->line_total_cents,
+
+
                         'options' => $valueOptions,
-                        'ranges' => $rangeOptions, // ⬅️ теперь это массив {title,label}
+                        'ranges' => $rangeOptions,
+                        'has_qty_slider' => $hasQtySlider,
                     ];
                 })->values(),
             ],
