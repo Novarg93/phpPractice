@@ -3,6 +3,11 @@ import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 import { loadStripe } from '@stripe/stripe-js'
 import axios from 'axios'
 import { useCartSummary } from '@/composables/useCartSummary'
+import { ref } from 'vue'
+
+
+const isLoading = ref(false)
+
 
 type ItemOption = {
   id: number
@@ -37,14 +42,19 @@ function formatPrice(cents: number) {
 }
 
 async function goToStripe() {
-  // создаём сессию на бэке
-  const { data } = await axios.post('/checkout/session')
-  // редиректим: вариант 1 — напрямую на URL
-  // window.location.href = data.url
-
-  // вариант 2 — через stripe-js (лучше, безопаснее)
-  const stripe = await loadStripe(props.stripePk)
-  await stripe?.redirectToCheckout({ sessionId: data.id })
+  if (isLoading.value) return
+  isLoading.value = true
+  try {
+    const { data } = await axios.post('/checkout/session')
+    const stripe = await loadStripe(props.stripePk)
+    if (!stripe) throw new Error('Stripe failed to load')
+    const { error } = await stripe.redirectToCheckout({ sessionId: data.id })
+    if (error) throw error
+    // если редирект не случился — дойдём до catch и вернём кнопку
+  } catch (e) {
+    console.error('Stripe redirect failed', e)
+    isLoading.value = false                  // 👈 вернём кнопку при ошибке
+  }
 }
 </script>
 
@@ -100,17 +110,25 @@ async function goToStripe() {
             <h2 class="font-semibold mb-3">Summary</h2>
             <ul class="space-y-2 text-sm">
               <li class="flex justify-between"><span>Subtotal</span><span>{{ formatPrice(totals.subtotal_cents)
-                  }}</span></li>
+              }}</span></li>
               <li class="flex justify-between"><span>Shipping</span><span>{{ formatPrice(totals.shipping_cents)
-                  }}</span></li>
+              }}</span></li>
               <li class="flex justify-between"><span>Tax</span><span>{{ formatPrice(totals.tax_cents) }}</span></li>
             </ul>
             <div class="mt-3 border-t pt-3 flex justify-between font-semibold">
               <span>Total</span><span>{{ formatPrice(totals.total_cents) }}</span>
             </div>
 
-            <button class="w-full mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-lg" @click="goToStripe">
+            <button v-if="!isLoading" class="w-full mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-lg"
+              @click="goToStripe">
               Pay with Stripe
+            </button>
+
+            <button v-else disabled aria-busy="true"
+              class="w-full mt-4 px-4 py-2 rounded-lg bg-muted text-muted-foreground flex items-center justify-center gap-2">
+              <span
+                class="inline-block h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
+              Redirecting…
             </button>
 
             <div class="mt-3 text-xs text-muted-foreground">
