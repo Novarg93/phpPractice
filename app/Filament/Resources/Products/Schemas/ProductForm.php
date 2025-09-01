@@ -197,6 +197,17 @@ class ProductForm
                                                 $set('pricing_mode', 'absolute'); // дефолт для selector
                                             }
                                         })
+                                        ->native(false)
+                                        ->columnSpan(6),
+                                    Select::make('ui_variant')
+                                        ->label('UI variant')
+                                        ->options([
+                                            'list'     => 'List (radio / checkbox)',
+                                            'dropdown' => 'Dropdown (single)',
+                                        ])
+                                        ->visible(fn($get) => $get('type') === OptionGroup::TYPE_SELECTOR)
+                                        ->default('list')
+                                        ->native(false)
                                         ->columnSpan(6),
 
                                     // 👇 ОСТАВЛЯЕМ РОВНО ОДИН toggle
@@ -241,6 +252,7 @@ class ProductForm
                                                     $set('pricing_mode', 'flat');
                                                 }
                                             })
+                                            ->native(false)
                                             ->columnSpan(6),
 
                                         // FLAT

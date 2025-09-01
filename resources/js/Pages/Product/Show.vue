@@ -105,11 +105,9 @@ async function addToCart() {
           <div v-if="product.option_groups?.length" class="mt-4 space-y-6">
             <div v-for="group in product.option_groups" :key="group.id" class="border rounded-lg p-3"
               :class="triedToSubmit && missingRequiredSet.has(group.id) ? 'border-red-400' : 'border-border'">
-              <component :is="resolveGroupComponent(group.type)" v-if="resolveGroupComponent(group.type)"
-                :group="group as any" v-model:selected="(selectionByGroup as any)[group.id]" />
-              <div v-else class="text-sm text-muted-foreground">
-                Unsupported group type: <code>{{ group.type }}</code>
-              </div>
+
+              <component :is="resolveGroupComponent(group.type, group)" :group="group as any"
+                v-model:selected="(selectionByGroup as any)[group.id]" />
 
               <p v-if="triedToSubmit && missingRequiredSet.has(group.id)" class="mt-1 text-sm text-red-600">
                 Это поле обязательно для выбора

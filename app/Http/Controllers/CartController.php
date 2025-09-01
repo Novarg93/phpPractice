@@ -510,18 +510,36 @@ class CartController extends Controller
 
                     $optionLabels = $vals->map(function ($v) {
                         $g = $v->group;
-                        $isPercent = in_array($g->type ?? null, [
+
+                        $mode = 'absolute';
+                        $valueCents = null;
+                        $valuePercent = null;
+
+                        if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
+                            $mode = ($g->pricing_mode === 'percent') ? 'percent' : 'absolute';
+                            if ($mode === 'percent') {
+                                $valuePercent = (float)($v->delta_percent ?? $v->value_percent ?? 0);
+                            } else {
+                                $valueCents = (int)($v->delta_cents ?? $v->price_delta_cents ?? 0);
+                            }
+                        } elseif (in_array($g->type ?? null, [
                             \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
                             \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
-                        ], true);
+                        ], true)) {
+                            $mode = 'percent';
+                            $valuePercent = (float)($v->value_percent ?? 0);
+                        } else {
+                            $mode = 'absolute';
+                            $valueCents = (int)($v->price_delta_cents ?? 0);
+                        }
 
                         return [
                             'id'            => $v->id,
                             'title'         => $v->title,
-                            'calc_mode'     => $isPercent ? 'percent' : 'absolute',
+                            'calc_mode'     => $mode,                                           // absolute|percent
                             'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
-                            'value_cents'   => (int) $v->price_delta_cents,
-                            'value_percent' => $v->value_percent !== null ? (float)$v->value_percent : null,
+                            'value_cents'   => $valueCents,
+                            'value_percent' => $valuePercent,
                         ];
                     })->values()->all();
 
@@ -563,25 +581,40 @@ class CartController extends Controller
                 // ⬇️ опции из option_value_id (аддитив/процент)
                 $optionLabels = $item->options
                     ->filter(fn($o) => $o->option_value_id && $o->optionValue && $o->optionValue->group)
-                    ->sortBy([
-                        fn($o) => $o->optionValue->group->position ?? 0,
-                        fn($o) => $o->optionValue->position ?? 0,
-                    ])
+                    ->sortBy([fn($o) => $o->optionValue->group->position ?? 0, fn($o) => $o->optionValue->position ?? 0])
                     ->map(function ($o) {
                         $v = $o->optionValue;
                         $g = $v->group;
-                        $isPercent = in_array($g->type ?? null, [
+
+                        $mode = 'absolute';
+                        $valueCents = null;
+                        $valuePercent = null;
+
+                        if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
+                            $mode = ($g->pricing_mode === 'percent') ? 'percent' : 'absolute';
+                            if ($mode === 'percent') {
+                                $valuePercent = (float)($v->delta_percent ?? $v->value_percent ?? 0);
+                            } else {
+                                $valueCents = (int)($v->delta_cents ?? $v->price_delta_cents ?? 0);
+                            }
+                        } elseif (in_array($g->type ?? null, [
                             \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
                             \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
-                        ], true);
+                        ], true)) {
+                            $mode = 'percent';
+                            $valuePercent = (float)($v->value_percent ?? 0);
+                        } else {
+                            $mode = 'absolute';
+                            $valueCents = (int)($v->price_delta_cents ?? 0);
+                        }
 
                         return [
                             'id'            => $v->id,
                             'title'         => $v->title,
-                            'calc_mode'     => $isPercent ? 'percent' : 'absolute',
+                            'calc_mode'     => $mode,
                             'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
-                            'value_cents'   => (int) $v->price_delta_cents,
-                            'value_percent' => $v->value_percent !== null ? (float)$v->value_percent : null,
+                            'value_cents'   => $valueCents,
+                            'value_percent' => $valuePercent,
                         ];
                     })
                     ->values()
@@ -715,8 +748,17 @@ class CartController extends Controller
             $i = collect($items)->firstWhere('id', $data['item_id']);
             abort_if(!$i, 404);
 
-            $i['qty'] = (int)$data['qty'];
-            $i['line_total_cents'] = $i['unit_price_cents'] * $i['qty'];
+
+            $pricing = $this->computeUnitAndTotalCents(
+                $i['product_id'],
+                $i['option_value_ids'] ?? [],
+                $i['range_options'] ?? [],
+                (int)$data['qty']
+            );
+
+            $i['qty']               = (int)$data['qty'];
+            $i['unit_price_cents']  = $pricing['unit'];
+            $i['line_total_cents']  = $pricing['line_total'];
 
             $items = collect($items)->map(fn($row) => $row['id'] === $i['id'] ? $i : $row)->values()->all();
             $this->saveGuestCart($request, $items);
@@ -727,9 +769,29 @@ class CartController extends Controller
             ]);
         }
 
-        $item = CartItem::findOrFail($data['item_id']);
-        $item->qty = (int)$data['qty'];
-        $item->line_total_cents = $item->unit_price_cents * $item->qty;
+        $item = CartItem::with(['product', 'options'])->findOrFail($data['item_id']);
+
+        $valueIds = $item->options->pluck('option_value_id')->filter()->values()->all();
+        $ranges = $item->options
+            ->filter(fn($o) => !is_null($o->option_group_id))
+            ->map(fn($o) => [
+                'option_group_id' => (int)$o->option_group_id,
+                'selected_min'    => (int)$o->selected_min,
+                'selected_max'    => (int)$o->selected_max,
+            ])
+            ->values()
+            ->all();
+
+        $pricing = $this->computeUnitAndTotalCents(
+            $item->product_id,
+            $valueIds,
+            $ranges,
+            (int)$data['qty']
+        );
+
+        $item->qty               = (int)$data['qty'];
+        $item->unit_price_cents  = $pricing['unit'];       // обычно совпадёт, но пусть будет консистентно
+        $item->line_total_cents  = $pricing['line_total'];
         $item->save();
 
         return response()->json([

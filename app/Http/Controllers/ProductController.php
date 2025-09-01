@@ -47,9 +47,10 @@ class ProductController extends Controller
                         'is_required'     => (bool) $g->is_required,
                         'multiply_by_qty' => is_null($g->multiply_by_qty) ? true : (bool) $g->multiply_by_qty,
                     ];
-                    if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
+                    if (($g->type ?? null) === OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
                         return array_merge($base, [
                             'type'           => 'selector',
+                            'ui_variant'     => $g->ui_variant === 'dropdown' ? 'dropdown' : 'list', // 👈
                             'selection_mode' => $g->selection_mode === 'multi' ? 'multi' : 'single',
                             'pricing_mode'   => $g->pricing_mode   === 'percent' ? 'percent' : 'absolute',
                             'values'         => $g->values->where('is_active', true)->map(function ($v) use ($g) {

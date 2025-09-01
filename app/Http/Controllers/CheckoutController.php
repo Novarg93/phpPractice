@@ -25,35 +25,50 @@ class CheckoutController extends Controller
         return Inertia::render('Checkout/Index', [
             'stripePk' => config('services.stripe.key'),
             'items' => $cart->items->map(function ($i) {
-                // диапазоны (как было)
+
                 $rangeLabels = $i->options
                     ->filter(fn($o) => !is_null($o->option_group_id))
                     ->map(fn($o) => ((int)$o->selected_min) . '-' . ((int)$o->selected_max))
                     ->values()
                     ->all();
 
-                // выбранные value-опции (аддитив/процент) — как в корзине
+
                 $optionLabels = $i->options
                     ->filter(fn($o) => $o->option_value_id && $o->optionValue && $o->optionValue->group)
-                    ->sortBy([
-                        fn($o) => $o->optionValue->group->position ?? 0,
-                        fn($o) => $o->optionValue->position ?? 0,
-                    ])
+                    ->sortBy([fn($o) => $o->optionValue->group->position ?? 0, fn($o) => $o->optionValue->position ?? 0])
                     ->map(function ($o) {
                         $v = $o->optionValue;
                         $g = $v->group;
-                        $isPercent = in_array($g->type ?? null, [
+
+                        $mode = 'absolute';
+                        $valueCents = null;
+                        $valuePercent = null;
+
+                        if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
+                            $mode = ($g->pricing_mode === 'percent') ? 'percent' : 'absolute';
+                            if ($mode === 'percent') {
+                                $valuePercent = (float)($v->delta_percent ?? $v->value_percent ?? 0);
+                            } else {
+                                $valueCents = (int)($v->delta_cents ?? $v->price_delta_cents ?? 0);
+                            }
+                        } elseif (in_array($g->type ?? null, [
                             \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
                             \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
-                        ], true);
+                        ], true)) {
+                            $mode = 'percent';
+                            $valuePercent = (float)($v->value_percent ?? 0);
+                        } else {
+                            $mode = 'absolute';
+                            $valueCents = (int)($v->price_delta_cents ?? 0);
+                        }
 
                         return [
                             'id'            => $v->id,
                             'title'         => $v->title,
-                            'calc_mode'     => $isPercent ? 'percent' : 'absolute',
+                            'calc_mode'     => $mode,
                             'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
-                            'value_cents'   => (int) $v->price_delta_cents,
-                            'value_percent' => $v->value_percent !== null ? (float)$v->value_percent : null,
+                            'value_cents'   => $valueCents,
+                            'value_percent' => $valuePercent,
                         ];
                     })
                     ->values()
@@ -72,9 +87,9 @@ class CheckoutController extends Controller
                     'qty' => $i->qty,
                     'unit_price_cents' => $i->unit_price_cents,
                     'line_total_cents' => $i->line_total_cents,
-                    'options' => $optionLabels,   // 👈 нормализованные опции
+                    'options' => $optionLabels,
                     'range_labels' => $rangeLabels,
-                    'has_qty_slider' => $hasQtySlider, // 👈 для "/ each"
+                    'has_qty_slider' => $hasQtySlider,
                 ];
             })->values(),
             'totals' => [
@@ -118,15 +133,16 @@ class CheckoutController extends Controller
             if (count($optTitles))   $parts[] = implode(', ', $optTitles);
             if (count($rangeLabels)) $parts[] = implode(', ', $rangeLabels);
 
-            $name = $ci->product->name . (count($parts) ? ' (' . implode(' | ', $parts) . ')' : '');
+            $nameBase = $ci->product->name . (count($parts) ? ' (' . implode(' | ', $parts) . ')' : '');
+            $name = $nameBase . ' x' . $ci->qty; // 👈 чтобы видно было кол-во
 
             $lineItems[] = [
                 'price_data' => [
                     'currency' => 'usd',
                     'product_data' => ['name' => $name],
-                    'unit_amount' => $ci->unit_price_cents,
+                    'unit_amount' => $ci->line_total_cents,  // 👈 ВСЯ сумма по строке
                 ],
-                'quantity' => $ci->qty,
+                'quantity' => 1,                              // 👈 одна строка = одна позиция
             ];
         }
 
@@ -220,7 +236,7 @@ class CheckoutController extends Controller
                             'option_value_id'   => null,
                             'option_group_id'   => $opt->option_group_id,
                             'title'             => $opt->group?->title ?? 'Range', // ✅ берём group title
-                            'price_delta_cents' => (int)($opt->price_delta_cents ?? 0),
+                            'price_delta_cents' => (int)($ov?->delta_cents ?? $ov?->price_delta_cents ?? 0),
                             'selected_min'      => (int)($opt->selected_min ?? 0),
                             'selected_max'      => (int)($opt->selected_max ?? 0),
                             'payload_json'      => $opt->payload_json ?? null,

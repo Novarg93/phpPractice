@@ -36,7 +36,7 @@ class OrderController extends Controller
         $order->load(
             'items.product.optionGroups',
             'items.options.optionValue.group',
-            'items.options.group' 
+            'items.options.group'
         );
 
         return Inertia::render('Profile/Orders/Show', [
@@ -59,18 +59,36 @@ class OrderController extends Controller
                         ->map(function ($o) {
                             $v = $o->optionValue;
                             $g = $v->group;
-                            $isPercent = in_array($g->type ?? null, [
+
+                            $mode = 'absolute';
+                            $valueCents = null;
+                            $valuePercent = null;
+
+                            if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
+                                $mode = ($g->pricing_mode === 'percent') ? 'percent' : 'absolute';
+                                if ($mode === 'percent') {
+                                    $valuePercent = (float)($v->delta_percent ?? $v->value_percent ?? 0);
+                                } else {
+                                    $valueCents = (int)($v->delta_cents ?? $v->price_delta_cents ?? 0);
+                                }
+                            } elseif (in_array($g->type ?? null, [
                                 \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
                                 \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
-                            ], true);
+                            ], true)) {
+                                $mode = 'percent';
+                                $valuePercent = (float)($v->value_percent ?? 0);
+                            } else {
+                                $mode = 'absolute';
+                                $valueCents = (int)($v->price_delta_cents ?? 0);
+                            }
 
                             return [
                                 'id'            => $v->id,
                                 'title'         => $v->title,
-                                'calc_mode'     => $isPercent ? 'percent' : 'absolute',
+                                'calc_mode'     => $mode,
                                 'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
-                                'value_cents'   => (int) $v->price_delta_cents,
-                                'value_percent' => $v->value_percent !== null ? (float)$v->value_percent : null,
+                                'value_cents'   => $valueCents,
+                                'value_percent' => $valuePercent,
                             ];
                         })
                         ->values();

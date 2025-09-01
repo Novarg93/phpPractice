@@ -36,13 +36,20 @@ class OptionGroup extends Model
         'selection_mode',     // single|multi
         'pricing_mode',       // absolute|percent
         'multiply_by_qty',
+        'ui_variant',         // 👈 ДОБАВИЛИ
 
         // quantity_slider
-        'qty_min', 'qty_max', 'qty_step', 'qty_default',
+        'qty_min',
+        'qty_max',
+        'qty_step',
+        'qty_default',
 
         // double_range_slider
-        'slider_min', 'slider_max', 'slider_step',
-        'range_default_min', 'range_default_max',
+        'slider_min',
+        'slider_max',
+        'slider_step',
+        'range_default_min',
+        'range_default_max',
         'unit_price_cents',
         'tier_combine_strategy',
         'tiers_json',
@@ -58,7 +65,10 @@ class OptionGroup extends Model
         'tiers_json'      => 'array',
     ];
 
-    public function product(): BelongsTo { return $this->belongsTo(Product::class); }
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
+    }
 
     public function values(): HasMany
     {
