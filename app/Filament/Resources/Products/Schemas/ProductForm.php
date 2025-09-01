@@ -101,6 +101,8 @@ class ProductForm
                     ->minValue(0)
                     ->required(),
 
+                
+
                 Toggle::make('is_active')->default(true),
                 Toggle::make('track_inventory')
                     ->default(false)
@@ -111,6 +113,13 @@ class ProductForm
                     ->minValue(0)
                     ->nullable()
                     ->disabled(fn(callable $get): bool => ! $get('track_inventory')),
+
+                    TextInput::make('price_preview')                  // 👈 НОВОЕ
+                    ->label('Price preview (text)')
+                    ->placeholder('$1 per 1M gold')
+                    ->helperText('Показывается в каталоге и на карточке товара, если заполнено')
+                    ->maxLength(255)
+                    ->columnSpan(1),
 
                 FileUpload::make('image')
                     ->label('Image')
@@ -199,6 +208,8 @@ class ProductForm
                                             ->minValue(0)
                                             ->visible(fn(callable $get) => $get('pricing_mode') === 'flat')
                                             ->columnSpan(4),
+
+
 
                                         // TIERED
                                         FRepeater::make('tiers_json')

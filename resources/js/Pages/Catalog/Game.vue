@@ -4,9 +4,14 @@ import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 import Breadcrumbs from '@/Components/Breadcrumbs.vue'
 import type { Category as BaseCategory, Product as BaseProduct, Paginator } from '@/types'
 
-
 type Cat = BaseCategory
-type Prod = BaseProduct & { categories?: Cat[] }
+
+type PricePreview =
+  | { kind: 'plain'; unit_cents: number }
+  | { kind: 'qty'; unit_cents: number; step: number; min: number; max: number }
+  | { kind: 'range'; pricing_mode: 'flat'|'tiered'|string; unit_cents: number; step: number; min: number; max: number; base_fee_cents?: number }
+
+type Prod = BaseProduct & { categories?: Cat[]; price_preview?: string | null }
 
 
 
@@ -19,10 +24,16 @@ const props = defineProps<{
   totalProducts: number
 }>()
 
-const { game, category, categories, products, seo, totalProducts  } = props
+const { game, category, categories, products, seo, totalProducts } = props
 
 function formatPrice(cents:number) {
-  return new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' }).format(cents / 100)
+  return new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' }).format((cents || 0) / 100)
+}
+
+// 👇 строка превью цены
+function previewLine(p: Prod) {
+  if (p.price_preview && p.price_preview.trim()) return p.price_preview
+  return formatPrice(p.price_cents)
 }
 </script>
 
@@ -75,7 +86,7 @@ function formatPrice(cents:number) {
               <img v-if="p.image_url" :src="p.image_url" class="w-full h-36 object-cover object-top  rounded-lg mb-2" />
               <h3 class="font-medium line-clamp-2">{{ p.name }}</h3>
               <div class="text-sm text-muted-foreground line-clamp-2">{{ p.short }}</div>
-              <div class="mt-2 font-semibold">{{ formatPrice(p.price_cents) }}</div>
+              <div class="mt-2 font-semibold">{{ previewLine(p) }}</div>
               <Link
                 :href="route('products.show', [game.slug, (category?.slug ?? p.categories?.[0]?.slug ?? 'items'), p.slug])"
                 class="mt-2 inline-block text-primary hover:underline text-sm"

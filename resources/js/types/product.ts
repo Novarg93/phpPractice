@@ -9,5 +9,6 @@ export type Product = {
   sku?: string | null;
   track_inventory: boolean;
   stock: number | null;
+  price_preview?: string | null
   
 };

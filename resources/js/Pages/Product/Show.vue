@@ -75,7 +75,7 @@ async function addToCart() {
       <Breadcrumbs :game="game" :category="category" :product="product" />
 
       <!-- error banner -->
-      <div v-if="errors.length" class="mb-4 rounded-md border border-red-300 bg-red-50 text-red-700 p-3">
+      <div v-if="errors.length" class="my-4 rounded-md border border-red-400  text-red-700 p-3">
         <ul class="list-disc pl-5">
           <li v-for="(err, i) in errors" :key="i">{{ err }}</li>
         </ul>

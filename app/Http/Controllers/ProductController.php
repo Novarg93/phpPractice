@@ -37,6 +37,7 @@ class ProductController extends Controller
                 'image_url'      => $product->image_url,
                 'short'          => $product->short,
                 'description'    => $product->description,
+                'price_preview' => $product->price_preview,
 
                 'option_groups' => $product->optionGroups->map(function ($g) {
                     // Общая часть для всех групп (type зададим ниже)

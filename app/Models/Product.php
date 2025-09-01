@@ -13,19 +13,20 @@ use Illuminate\Filesystem\FilesystemAdapter;
 class Product extends Model
 {
     protected $fillable = [
-        'category_id',
-        'name',
-        'slug',
-        'sku',
-        'price_cents',
-        'is_active',
-        'track_inventory',
-        'stock',
-        'image',
-        'short',
-        'description',
-        'meta'
-    ];
+    'category_id',
+    'name',
+    'slug',
+    'sku',
+    'price_cents',
+    'price_preview',  
+    'is_active',
+    'track_inventory',
+    'stock',
+    'image',
+    'short',
+    'description',
+    'meta',
+];
 
     protected $casts = [
         'is_active' => 'bool',

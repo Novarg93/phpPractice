@@ -32,76 +32,57 @@ function unitsInclusive(min: number, max: number, step: number) {
   return Math.floor((max - min) / step) + 1
 }
 
-/* ───────── double-range pricing (в ноль с бэком) ───────── */
+/* ───────── FLAT: как в CartController → exclusive шаги, без base_fee ───────── */
 function priceRangeFlat(g: DoubleRangeGroup, sel: { min: number; max: number }) {
-  const { min, max, step, Smin } = alignRange(g, sel)
-  const u = unitsInclusive(min, max, step)
-  const unitPrice = Number(g.unit_price_cents ?? 0)
-  const base = Number(g.base_fee_cents ?? 0)
-  return base + u * unitPrice
+  const { min, max, step } = alignRange(g, sel)
+  // exclusive: сколько «ступеней» пройти от min до max
+  const steps = Math.max(0, Math.floor((max - min) / step))
+  const unit = Number(g.unit_price_cents ?? 0)
+  return steps * unit
 }
 
+/* ───────── TIERED: полностью зеркалим CartController::priceTiered ───────── */
 function priceRangeTiered(g: DoubleRangeGroup, sel: { min: number; max: number }) {
-  const { min, max, step, Smin } = alignRange(g, sel)
-  const fullUnits = unitsInclusive(min, max, step)
+  const { min, max, step } = alignRange(g, sel)
+  const spanTotal = Math.max(0, max - min) // exclusive
 
-  // пересечения с тирами + выравнивание границ сегмента к сетке
   const tiers = (g.tiers ?? []).slice().sort((x, y) => x.from - y.from)
 
-  type Seg = {
-    from: number; to: number; unit_price_cents: number;
-    label?: string|null; min_block?: number|null; multiplier?: number|null; cap_cents?: number|null;
-  }
-  const parts: Seg[] = []
-  for (const t of tiers) {
-    const f  = Math.max(min, t.from)
-    const to = Math.min(max, t.to)
-    if (to < f) continue
-
-    // align to grid:
-    const alignedFrom = f + ((step - ((f - Smin) % step)) % step)
-    const alignedTo   = to - (((to - Smin) % step))
-    if (alignedFrom > alignedTo) continue
-
-    parts.push({
-      from: alignedFrom,
-      to: alignedTo,
-      unit_price_cents: Number(t.unit_price_cents ?? 0),
-      label: t.label ?? null,
-      min_block: t.min_block ?? null,
-      multiplier: t.multiplier ?? null,
-      cap_cents: t.cap_cents ?? null,
-    })
-  }
-
   let piecewise = 0
-  let maxUnit = 0
-  for (const p of parts) {
-    const segUnits = unitsInclusive(p.from, p.to, step)
-    let subtotal = segUnits * p.unit_price_cents
+  let highestUnit = 0
+  let weightedSum = 0 // unit(after multiplier) * (to-from)
 
-    if (p.min_block && p.min_block > 1) {
-      const blocks = Math.ceil(segUnits / p.min_block)
-      subtotal = blocks * p.min_block * p.unit_price_cents
-    }
-    if (p.multiplier && p.multiplier !== 1) {
-      subtotal = Math.round(subtotal * p.multiplier)
-    }
-    if (p.cap_cents != null) {
-      subtotal = Math.min(subtotal, p.cap_cents)
+  for (const t of tiers) {
+    const from = Math.max(t.from, min)
+    const to   = Math.min(t.to,   max)
+    if (to <= from) continue
+
+    let steps = to - from // exclusive
+    let unit = Number(t.unit_price_cents ?? 0)
+
+    // multiplier влияет и на weightedSum (как в бэке)
+    if (t.multiplier) unit = Math.round(unit * Number(t.multiplier))
+
+    // min_block округляем вверх
+    if (t.min_block && t.min_block > 1) {
+      steps = Math.ceil(steps / Number(t.min_block)) * Number(t.min_block)
     }
 
-    piecewise += subtotal
-    if (p.unit_price_cents > maxUnit) maxUnit = p.unit_price_cents
+    let cost = unit * steps
+    if (t.cap_cents != null) cost = Math.min(cost, Number(t.cap_cents))
+
+    piecewise += cost
+    highestUnit = Math.max(highestUnit, unit)
+    weightedSum += unit * (to - from) // без блоков/кап, но с multiplier
   }
 
   const strategy = g.tier_combine_strategy ?? 'sum_piecewise'
   const variable =
-    strategy === 'highest_tier_only' ? (maxUnit * fullUnits)
-  : strategy === 'weighted_average'  ? piecewise // на бэке это просто сумма
-  :                                     piecewise
+    strategy === 'highest_tier_only' ? highestUnit * spanTotal
+    : strategy === 'weighted_average' ? Math.round((spanTotal > 0 ? weightedSum / spanTotal : 0) * spanTotal)
+    : piecewise // sum_piecewise
 
-  const base = Number(g.base_fee_cents ?? 0)
+  const base = Number(g.base_fee_cents ?? 0) // только для tiered
   return base + variable
 }
 
