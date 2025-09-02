@@ -173,8 +173,8 @@ onMounted(() => loadSummary())
 
                             </DropdownMenuItem>
                             </Link>
-                            <Link :href="route('logout')" method="post" as="button">
-                            <DropdownMenuItem>
+                            <Link class="w-full" :href="route('logout')" method="post" as="button">
+                            <DropdownMenuItem class="w-full">
                                 Logout
 
                             </DropdownMenuItem>
