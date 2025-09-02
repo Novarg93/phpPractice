@@ -28,22 +28,22 @@ class CartPricing
                 $selected = $chosen->filter(fn($vid) => $g->values->contains('id', $vid));
                 $single   = (($g->selection_mode ?? 'single') !== 'multi');
 
-                if ($single && $selected->count() > 1) abort(422, 'Only one option can be selected in "'.$g->title.'".');
+                if ($single && $selected->count() > 1) abort(422, 'Only one option can be selected in "' . $g->title . '".');
 
                 if ($g->is_required) {
-                    if ($single && $selected->count() !== 1) abort(422, '"'.$g->title.'" is required.');
-                    if (!$single && $selected->count() < 1)   abort(422, 'Select at least one in "'.$g->title.'".');
+                    if ($single && $selected->count() !== 1) abort(422, '"' . $g->title . '" is required.');
+                    if (!$single && $selected->count() < 1)   abort(422, 'Select at least one in "' . $g->title . '".');
                 }
                 continue;
             }
 
             if (in_array($g->type, [OptionGroup::TYPE_RADIO, OptionGroup::TYPE_RADIO_PERCENT], true)) {
                 $selected = $chosen->filter(fn($vid) => $g->values->contains('id', $vid));
-                if ($selected->count() > 1) abort(422, 'Only one option can be selected in "'.$g->title.'".');
-                if ($g->is_required && $selected->count() !== 1) abort(422, '"'.$g->title.'" is required.');
+                if ($selected->count() > 1) abort(422, 'Only one option can be selected in "' . $g->title . '".');
+                if ($g->is_required && $selected->count() !== 1) abort(422, '"' . $g->title . '" is required.');
             } elseif (in_array($g->type, [OptionGroup::TYPE_CHECKBOX, OptionGroup::TYPE_CHECKBOX_PERCENT], true)) {
                 $selected = $chosen->filter(fn($vid) => $g->values->contains('id', $vid));
-                if ($g->is_required && $selected->count() < 1) abort(422, 'Select at least one in "'.$g->title.'".');
+                if ($g->is_required && $selected->count() < 1) abort(422, 'Select at least one in "' . $g->title . '".');
             }
         }
     }
@@ -59,9 +59,9 @@ class CartPricing
         $def  = $g->qty_default ?? $min;
         $q    = $qtyFromRequest ?? $def;
 
-        if ($g->is_required && ($q === null)) abort(422, '"'.$g->title.'" is required.');
-        if ($q < $min || $q > $max)          abort(422, 'Quantity must be between '.$min.' and '.$max.'.');
-        if (($q - $min) % $step !== 0)       abort(422, 'Invalid quantity step for "'.$g->title.'".');
+        if ($g->is_required && ($q === null)) abort(422, '"' . $g->title . '" is required.');
+        if ($q < $min || $q > $max)          abort(422, 'Quantity must be between ' . $min . ' and ' . $max . '.');
+        if (($q - $min) % $step !== 0)       abort(422, 'Invalid quantity step for "' . $g->title . '".');
 
         return (int)$q;
     }
@@ -80,26 +80,29 @@ class CartPricing
             if ($g->type !== OptionGroup::TYPE_RANGE) continue;
 
             $sel  = $list->firstWhere('option_group_id', $g->id);
-            if ($g->is_required && !$sel) abort(422, '"'.$g->title.'" is required.');
+            if ($g->is_required && !$sel) abort(422, '"' . $g->title . '" is required.');
             if (!$sel) continue;
 
             $min  = (int)$g->slider_min;
             $max  = (int)$g->slider_max;
             $step = max(1, (int)$g->slider_step);
 
-            if ($sel['selected_min'] < $min || $sel['selected_min'] > $max
-             || $sel['selected_max'] < $min || $sel['selected_max'] > $max) {
-                abort(422, 'Selected range for "'.$g->title.'" is out of bounds.');
+            if (
+                $sel['selected_min'] < $min || $sel['selected_min'] > $max
+                || $sel['selected_max'] < $min || $sel['selected_max'] > $max
+            ) {
+                abort(422, 'Selected range for "' . $g->title . '" is out of bounds.');
             }
 
             if ((($sel['selected_min'] - $min) % $step) !== 0
-             || (($sel['selected_max'] - $min) % $step) !== 0) {
-                abort(422, 'Invalid step for "'.$g->title.'".');
+                || (($sel['selected_max'] - $min) % $step) !== 0
+            ) {
+                abort(422, 'Invalid step for "' . $g->title . '".');
             }
 
             if ($g->pricing_mode === 'tiered' && $g->max_span) {
                 $span = max(0, $sel['selected_max'] - $sel['selected_min']);
-                if ($span > (int)$g->max_span) abort(422, 'Selected range exceeds maximum span for "'.$g->title.'".');
+                if ($span > (int)$g->max_span) abort(422, 'Selected range exceeds maximum span for "' . $g->title . '".');
             }
         }
 
@@ -114,10 +117,10 @@ class CartPricing
         $groups  = $product->optionGroups->keyBy('id');
         $values  = OptionValue::whereIn('id', $optionValueIds)->get();
 
-        $addUnitAbs  = 0;
-        $mulUnit     = 1.0;
-        $addTotalAbs = 0;
-        $mulTotal    = 1.0;
+        $addUnitAbs     = 0;
+        $sumPercUnit    = 0.0;   // 👈 вместо mulUnit
+        $addTotalAbs    = 0;
+        $sumPercTotal   = 0.0;   // 👈 вместо mulTotal
 
         foreach ($values as $v) {
             $g = $groups->get($v->option_group_id);
@@ -127,27 +130,30 @@ class CartPricing
 
             if (in_array($g->type, [OptionGroup::TYPE_SELECTOR, 'selector'], true)) {
                 $mode = $g->pricing_mode === 'percent' ? 'percent' : 'absolute';
+
                 if ($mode === 'percent') {
                     $p = (float)($v->delta_percent ?? $v->value_percent ?? 0.0);
-                    $factor = 1.0 + ($p/100.0);
-                    if ($isPerUnit) $mulUnit  *= $factor; else $mulTotal *= $factor;
+                    if ($isPerUnit) $sumPercUnit  += $p;
+                    else $sumPercTotal += $p;   // 👈 суммируем
                 } else {
                     $delta = (int)($v->delta_cents ?? $v->price_delta_cents ?? 0);
-                    if ($isPerUnit) $addUnitAbs += $delta; else $addTotalAbs += $delta;
+                    if ($isPerUnit) $addUnitAbs += $delta;
+                    else $addTotalAbs += $delta;
                 }
                 continue;
             }
 
             if (in_array($g->type, [OptionGroup::TYPE_RADIO, OptionGroup::TYPE_CHECKBOX], true)) {
                 $delta = (int)($v->price_delta_cents ?? 0);
-                if ($isPerUnit) $addUnitAbs += $delta; else $addTotalAbs += $delta;
+                if ($isPerUnit) $addUnitAbs += $delta;
+                else $addTotalAbs += $delta;
                 continue;
             }
 
             if (in_array($g->type, [OptionGroup::TYPE_RADIO_PERCENT, OptionGroup::TYPE_CHECKBOX_PERCENT], true)) {
                 $p = (float)($v->value_percent ?? 0.0);
-                $factor = 1.0 + ($p/100.0);
-                if ($isPerUnit) $mulUnit  *= $factor; else $mulTotal *= $factor;
+                if ($isPerUnit) $sumPercUnit  += $p;
+                else $sumPercTotal += $p;      // 👈 суммируем
                 continue;
             }
         }
@@ -155,11 +161,11 @@ class CartPricing
         $deltaRangePerUnit = $this->computeRangePerUnitDelta($product, $rangeSelections);
 
         $unitBase = (int)$product->price_cents + $addUnitAbs + $deltaRangePerUnit;
-        $unit     = (int) round($unitBase * $mulUnit);
+        $unit     = (int) round($unitBase * (1.0 + $sumPercUnit / 100.0));          // 👈 применяем один раз
 
         $subtotal      = $unit * max(1, $qty);
         $beforePercent = $subtotal + $addTotalAbs;
-        $lineTotal     = (int) round($beforePercent * $mulTotal);
+        $lineTotal     = (int) round($beforePercent * (1.0 + $sumPercTotal / 100.0)); // 👈 применяем один раз
 
         return [
             'unit'       => $unit,
@@ -167,11 +173,11 @@ class CartPricing
             'breakdown'  => [
                 'base'            => (int)$product->price_cents,
                 'addUnitAbs'      => $addUnitAbs,
-                'mulUnit'         => $mulUnit,
+                'sumPercUnit'     => $sumPercUnit,    // 👈 для отладки можно вернуть суммы, а не множители
                 'rangePerUnit'    => $deltaRangePerUnit,
                 'qty'             => $qty,
                 'addTotalAbs'     => $addTotalAbs,
-                'mulTotal'        => $mulTotal,
+                'sumPercTotal'    => $sumPercTotal,
             ],
         ];
     }

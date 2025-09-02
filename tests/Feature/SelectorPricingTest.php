@@ -19,24 +19,22 @@ class SelectorPricingTest extends TestCase
 
     private function makeProduct(): Product
     {
-        // Создаём минимальную игру (дополни полями, если в миграции есть NOT NULL)
         $game = Game::query()->create([
             'name' => 'Test Game ' . Str::random(6),
             'slug' => Str::slug('test-game-' . Str::random(6)),
-            // добавь обязательные поля, если есть: 'image' => 'test.jpg', ...
         ]);
 
         $cat = Category::query()->create([
             'name'    => 'Test Cat ' . Str::random(6),
-            'slug'    => Str::slug('test-'.Str::random(6)),
-            'game_id' => $game->id, // 👈 критично
-            // если есть ещё NOT NULL столбцы — добавь их тут
+            'slug'    => Str::slug('test-' . Str::random(6)),
+            'game_id' => $game->id,
+            'type'    => 'product', // 👈 добавь ЭТО (или то значение, что ожидает твоя БД)
         ]);
 
         return Product::query()->create([
             'name'        => 'Test Prod ' . Str::random(6),
-            'slug'        => Str::slug('test-prod-'.Str::random(6)),
-            'sku'         => 'SKU-'.Str::upper(Str::random(6)),
+            'slug'        => Str::slug('test-prod-' . Str::random(6)),
+            'sku'         => 'SKU-' . Str::upper(Str::random(6)),
             'price_cents' => 10000,
             'is_active'   => true,
             'category_id' => $cat->id,
@@ -120,12 +118,13 @@ class SelectorPricingTest extends TestCase
             'delta_cents'        => 1234,
             'delta_percent'      => null,
             'value_percent'      => null, // legacy alias
-            'price_delta_cents'  => null, // legacy alias
+            'price_delta_cents'  => 0, // legacy alias
         ]);
 
         $v->refresh();
         $this->assertSame(1234, $v->delta_cents);
         $this->assertNull($v->delta_percent);
+        $this->assertSame(0, $v->price_delta_cents);
     }
 
     public function test_keeps_legacy_radio_checkbox_intact_smoke(): void
@@ -136,7 +135,7 @@ class SelectorPricingTest extends TestCase
             'product_id' => $product->id,
             'title'      => 'Legacy Radio',
             'type'       => OptionGroup::TYPE_RADIO,
-            'is_required'=> false,
+            'is_required' => false,
             'position'   => 0,
         ]);
 
