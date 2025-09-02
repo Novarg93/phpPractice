@@ -13,6 +13,8 @@ export interface OptionItem {
   delta_percent?: number | null
   is_default?: boolean
   is_active?: boolean
+  allow_class_value_ids?: number[] | null   
+  allow_slot_value_ids?: number[] | null 
 }
 
 interface BaseGroup {
@@ -23,6 +25,7 @@ interface BaseGroup {
 
 export interface SelectorGroup extends BaseGroup {
   type: 'selector'
+   code?: string | null
   selection_mode: 'single' | 'multi'
   pricing_mode: 'absolute' | 'percent'
   multiply_by_qty?: boolean

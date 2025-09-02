@@ -69,14 +69,24 @@ class CartController extends Controller
                         ->whereIn('id', $i['option_value_ids'] ?? [])
                         ->get()
                         ->filter(fn($v) => $v->group)
-                        ->sortBy([
-                            fn($v) => $v->group->position ?? 0,
-                            fn($v) => $v->position ?? 0,
-                        ]);
+                        ->sortBy(function ($v) {
+                            $g = $v->group;
+                            $priority = match ($g->code ?? null) {
+                                'class' => 0,
+                                'slot'  => 1,
+                                'affix' => 2,
+                                default => 100,
+                            };
+                            // составной числовой ключ: приоритет → позиция группы → позиция значения
+                            return $priority * 1_000_000
+                                + (int)($g->position ?? 0) * 1_000
+                                + (int)($v->position ?? 0);
+                        });
 
                     $optionLabels = $vals->map(function ($v) {
                         $g = $v->group;
 
+                        // режим значения
                         $mode = 'absolute';
                         $valueCents = null;
                         $valuePercent = null;
@@ -99,15 +109,19 @@ class CartController extends Controller
                             $valueCents = (int)($v->price_delta_cents ?? 0);
                         }
 
+                        // вычисляем scope корректно и локально
+                        $isUnit = ($g->multiply_by_qty === null) ? true : (bool) $g->multiply_by_qty;
+
                         return [
                             'id'            => $v->id,
                             'title'         => $v->title,
-                            'calc_mode'     => $mode, // absolute|percent
-                            'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
+                            'calc_mode'     => $mode,              // absolute | percent
+                            'scope'         => $isUnit ? 'unit' : 'total',
                             'value_cents'   => $valueCents,
                             'value_percent' => $valuePercent,
                         ];
                     })->values()->all();
+
 
                     return [
                         'id' => $i['id'],
@@ -147,7 +161,19 @@ class CartController extends Controller
 
                 $optionLabels = $item->options
                     ->filter(fn($o) => $o->option_value_id && $o->optionValue && $o->optionValue->group)
-                    ->sortBy([fn($o) => $o->optionValue->group->position ?? 0, fn($o) => $o->optionValue->position ?? 0])
+                    ->sortBy(function ($o) {
+                        $v = $o->optionValue;
+                        $g = $v->group;
+                        $priority = match ($g->code ?? null) {
+                            'class' => 0,
+                            'slot'  => 1,
+                            'affix' => 2,
+                            default => 100,
+                        };
+                        return $priority * 1_000_000
+                            + (int)($g->position ?? 0) * 1_000
+                            + (int)($v->position ?? 0);
+                    })
                     ->map(function ($o) {
                         $v = $o->optionValue;
                         $g = $v->group;
@@ -174,11 +200,13 @@ class CartController extends Controller
                             $valueCents = (int)($v->price_delta_cents ?? 0);
                         }
 
+                        $isUnit = ($g->multiply_by_qty === null) ? true : (bool) $g->multiply_by_qty;
+
                         return [
                             'id'            => $v->id,
                             'title'         => $v->title,
                             'calc_mode'     => $mode,
-                            'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
+                            'scope'         => $isUnit ? 'unit' : 'total',
                             'value_cents'   => $valueCents,
                             'value_percent' => $valuePercent,
                         ];
@@ -188,7 +216,9 @@ class CartController extends Controller
 
                 return [
                     'id' => $item->id,
+
                     'product' => [
+
                         'id' => $item->product->id,
                         'name' => $item->product->name,
                         'image_url' => $item->product->image_url,

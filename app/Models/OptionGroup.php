@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 
 class OptionGroup extends Model
 {
@@ -57,7 +58,16 @@ class OptionGroup extends Model
         'max_span',
         'rounding',
         'currency',
+        'code',  
     ];
+
+    protected function code(): Attribute
+{
+    return Attribute::make(
+        get: fn ($v) => $v,
+        set: fn ($v) => $v ? strtolower(trim($v)) : null,
+    );
+}
 
     protected $casts = [
         'is_required'     => 'bool',

@@ -84,10 +84,19 @@ class OrderController extends Controller
                     // value-опции (radio/checkbox): как в корзине/чекауте
                     $valueOptions = $i->options
                         ->filter(fn($o) => $o->option_value_id && $o->optionValue && $o->optionValue->group)
-                        ->sortBy([
-                            fn($o) => $o->optionValue->group->position ?? 0,
-                            fn($o) => $o->optionValue->position ?? 0,
-                        ])
+                         ->sortBy(function ($o) {
+                        $v = $o->optionValue;
+                        $g = $v->group;
+                        $priority = match ($g->code ?? null) {
+                            'class' => 0,
+                            'slot'  => 1,
+                            'affix' => 2,
+                            default => 100,
+                        };
+                        return $priority * 1_000_000
+                            + (int)($g->position ?? 0) * 1_000
+                            + (int)($v->position ?? 0);
+                    })
                         ->map(function ($o) {
                             $v = $o->optionValue;
                             $g = $v->group;

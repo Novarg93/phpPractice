@@ -35,7 +35,19 @@ class CheckoutController extends Controller
 
                 $optionLabels = $i->options
                     ->filter(fn($o) => $o->option_value_id && $o->optionValue && $o->optionValue->group)
-                    ->sortBy([fn($o) => $o->optionValue->group->position ?? 0, fn($o) => $o->optionValue->position ?? 0])
+                    ->sortBy(function ($o) {
+                        $v = $o->optionValue;
+                        $g = $v->group;
+                        $priority = match ($g->code ?? null) {
+                            'class' => 0,
+                            'slot'  => 1,
+                            'affix' => 2,
+                            default => 100,
+                        };
+                        return $priority * 1_000_000
+                            + (int)($g->position ?? 0) * 1_000
+                            + (int)($v->position ?? 0);
+                    })
                     ->map(function ($o) {
                         $v = $o->optionValue;
                         $g = $v->group;
@@ -138,7 +150,7 @@ class CheckoutController extends Controller
         abort_if($cart->items->isEmpty(), 422, 'Cart is empty');
 
         $optIds = $cart->items->flatMap(fn($ci) => $ci->options->pluck('option_value_id'))->filter()->unique()->values();
-        $ovMap = OptionValue::whereIn('id', $optIds)->get()->keyBy('id');
+        $ovMap = OptionValue::with('group')->whereIn('id', $optIds)->get()->keyBy('id');
 
         $lineItems = [];
         foreach ($cart->items as $ci) {
@@ -250,11 +262,32 @@ class CheckoutController extends Controller
                 foreach ($ci->options as $opt) {
                     // 1) value-опция (radio/checkbox)
                     if ($opt->option_value_id !== null) {
-                        $ov = \App\Models\OptionValue::find($opt->option_value_id);
+                        $ov = \App\Models\OptionValue::with('group')->find($opt->option_value_id);
+                        $g  = $ov?->group;
+
+                        $delta = 0;
+                        if ($g) {
+                            if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
+                                if (($g->pricing_mode ?? 'absolute') === 'percent') {
+                                    // если хотите хранить проценты — можно в payload_json, а cents оставить 0
+                                    // $pct = (float)($ov->delta_percent ?? $ov->value_percent ?? 0);
+                                } else {
+                                    $delta = (int)($ov->delta_cents ?? $ov->price_delta_cents ?? 0);
+                                }
+                            } elseif (in_array($g->type ?? null, [
+                                \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
+                                \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
+                            ], true)) {
+                                // здесь тоже проценты; по аналогии можно сохранить в payload_json
+                            } else {
+                                $delta = (int)($ov->price_delta_cents ?? 0);
+                            }
+                        }
+
                         $oi->options()->create([
                             'option_value_id'   => $opt->option_value_id,
                             'title'             => $ov?->title ?? 'Option',
-                            'price_delta_cents' => (int)($opt->price_delta_cents ?? 0),
+                            'price_delta_cents' => $delta,
                         ]);
                         continue;
                     }

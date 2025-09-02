@@ -8,7 +8,10 @@ import { useProductOptions } from '@/composables/useProductOptions'
 import { usePricing } from '@/composables/usePricing'
 import type { Game, Category } from '@/types'
 import type { ProductWithGroups } from '@/types/product-options'
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted  } from 'vue'
+import RareItemBuilder from '@/Components/product/RareItemBuilder.vue'
+import type { SelectorGroup } from '@/types/product-options'
+
 
 const props = defineProps<{
   game: Game
@@ -19,6 +22,108 @@ const props = defineProps<{
 const { selectionByGroup, qtyGroup, buildAddToCartPayload } = useProductOptions(props.product)
 const { unitCents, totalCents } = usePricing(props.product, selectionByGroup)
 const { loadSummary } = useCartSummary()
+
+const groups = computed(() => (props.product.option_groups ?? []).filter(g => g.type === 'selector') as SelectorGroup[])
+
+function byCodeOrTitle(code: string, rx: RegExp): SelectorGroup | undefined {
+  return groups.value.find(g => (g as any).code === code)
+    ?? groups.value.find(g => rx.test((g.title || '').toLowerCase()))
+}
+
+const classGroup = computed(() => byCodeOrTitle('class', /class|класс/))
+const slotGroup = computed(() => byCodeOrTitle('slot', /slot|слот|предмет/))
+const affixGroup = computed(() => byCodeOrTitle('affix', /affix|аффикс|характеристик/))
+
+// КЛАСС — всегда number|null
+const classModel = computed<number | null>({
+  get: () => {
+    const g = classGroup.value
+    if (!g) return null
+    const raw = (selectionByGroup.value as any)[g.id]
+    if (Array.isArray(raw)) return raw.length ? Number(raw[0]) : null
+    return typeof raw === 'number' && Number.isFinite(raw) ? raw : null
+  },
+  set: (v) => {
+    const g = classGroup.value
+    if (!g) return
+    ;(selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
+  },
+})
+
+
+// СЛОТ — всегда number|null
+const slotModel = computed<number | null>({
+  get: () => {
+    const g = slotGroup.value
+    if (!g) return null
+    const raw = (selectionByGroup.value as any)[g.id]
+    if (Array.isArray(raw)) return raw.length ? Number(raw[0]) : null
+    return typeof raw === 'number' && Number.isFinite(raw) ? raw : null
+  },
+  set: (v) => {
+    const g = slotGroup.value
+    if (!g) return
+    ;(selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
+  },
+})
+
+
+// АФФИКСЫ — всегда массив number[]
+const affixModel = computed<number[]>({
+  get: () => {
+    const g = affixGroup.value
+    if (!g) return []
+    const raw = (selectionByGroup.value as any)[g.id]
+    if (Array.isArray(raw)) return raw
+    if (typeof raw === 'number' && Number.isFinite(raw)) return [raw]
+    return []
+  },
+  set: (v) => {
+    const g = affixGroup.value
+    if (!g) return
+    const next = Array.isArray(v) ? v : (v != null ? [Number(v)] : [])
+    ;(selectionByGroup.value as any)[g.id] = next
+  },
+})
+
+onMounted(() => {
+  const cg = classGroup.value
+  if (cg) {
+    const raw = (selectionByGroup.value as any)[cg.id]
+    if (Array.isArray(raw))
+      (selectionByGroup.value as any)[cg.id] = raw.length ? Number(raw[0]) : null
+  }
+
+  const sg = slotGroup.value
+  if (sg) {
+    const raw = (selectionByGroup.value as any)[sg.id]
+    if (Array.isArray(raw))
+      (selectionByGroup.value as any)[sg.id] = raw.length ? Number(raw[0]) : null
+  }
+
+  const ag = affixGroup.value
+  if (ag) {
+    const raw = (selectionByGroup.value as any)[ag.id]
+    if (!Array.isArray(raw))
+      (selectionByGroup.value as any)[ag.id] =
+        typeof raw === 'number' && Number.isFinite(raw) ? [raw] : []
+  }
+})
+
+
+// Какие группы скрыть из “обычного” рендера
+const rareIds = computed(() => new Set(
+  [classGroup.value?.id, slotGroup.value?.id, affixGroup.value?.id].filter(Boolean) as number[]
+))
+
+
+
+const otherGroups = computed(() =>
+  (props.product.option_groups ?? []).filter(g => !rareIds.value.has(g.id))
+)
+
+
+
 
 // --- state for UX ---
 const submitting = ref(false)
@@ -102,24 +207,36 @@ async function addToCart() {
             </template>
           </div>
 
-          <div v-if="product.option_groups?.length" class="mt-4 space-y-6">
-            <div v-for="group in product.option_groups" :key="group.id" class="border rounded-lg p-3"
+
+
+          <!-- RARE BUILDER -->
+          <div v-if="classGroup && slotGroup && affixGroup" class="mt-4 border rounded-lg p-3">
+            <RareItemBuilder :class-group="classGroup" :slot-group="slotGroup" :affix-group="affixGroup"
+              :currency="'USD'" v-model:class-id="classModel" v-model:slot-id="slotModel"
+              v-model:affix-ids="affixModel" />
+          </div>
+
+          <!-- Остальные группы (кроме class/slot/affix) -->
+
+          <div v-if="otherGroups.length" class="mt-4 space-y-6">
+            <div v-for="group in otherGroups" :key="group.id" class="border rounded-lg p-3"
               :class="triedToSubmit && missingRequiredSet.has(group.id) ? 'border-red-400' : 'border-border'">
-
-              <component :is="resolveGroupComponent(group.type, group)" :group="group as any"
+              <component :is="resolveGroupComponent(group.type, group) || 'div'" :group="group as any"
                 v-model:selected="(selectionByGroup as any)[group.id]" />
-
               <p v-if="triedToSubmit && missingRequiredSet.has(group.id)" class="mt-1 text-sm text-red-600">
                 Это поле обязательно для выбора
               </p>
             </div>
           </div>
 
+          <!-- Кнопка — вне условного блока конструктора -->
           <button class="mt-5 px-4 py-2 rounded-lg bg-primary text-primary-foreground" @click.prevent="addToCart">
             {{ submitting ? 'Adding…' : 'Add to cart' }}
           </button>
+
         </div>
-      </div>
+      </div> <!-- правая колонка -->
+
     </section>
   </DefaultLayout>
 </template>

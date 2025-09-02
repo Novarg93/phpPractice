@@ -19,6 +19,8 @@ class OptionValue extends Model
         'position',
         'delta_cents',
         'delta_percent',
+        'allow_class_value_ids',   // 👈 добавь
+        'allow_slot_value_ids',
     ];
 
     protected $casts = [
@@ -27,6 +29,8 @@ class OptionValue extends Model
         'value_percent' => 'float',
         'delta_cents' => 'integer',
         'delta_percent' => 'float',
+        'allow_class_value_ids' => 'array',
+        'allow_slot_value_ids'  => 'array',
     ];
 
     public function group(): BelongsTo

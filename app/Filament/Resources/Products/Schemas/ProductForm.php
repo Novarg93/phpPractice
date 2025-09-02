@@ -12,8 +12,8 @@ use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
 use Filament\Schemas\Components\Section as UiSection;
+use Filament\Forms\Components\Select as FSelect;
 use Filament\Forms\Get;
-use Illuminate\Support\Str;
 
 use App\Models\OptionGroup;
 use Filament\Schemas\Components\Grid as UiGrid;
@@ -151,6 +151,14 @@ class ProductForm
                                         ->label('Group title')
                                         ->required()
                                         ->columnSpan(12),
+
+                                    TextInput::make('code')
+                                        ->label('Rare code')
+                                        ->placeholder('class | slot | affix')
+                                        ->datalist(['class', 'slot', 'affix'])
+                                        ->maxLength(32)
+                                        ->columnSpan(6)
+                                        ->reactive(),
 
                                     Select::make('type')
                                         ->label('Type')
@@ -327,8 +335,7 @@ class ProductForm
                                             ->required()
                                             ->columnSpan(6),
 
-
-                                        // ----- ДЛЯ SELECTOR + ABSOLUTE -----
+                                        // ----- SELECTOR + ABSOLUTE -----
                                         TextInput::make('delta_cents')
                                             ->label('Value (cents)')
                                             ->numeric()
@@ -338,7 +345,7 @@ class ProductForm
                                                 && ($get('../../pricing_mode') ?? 'absolute') === 'absolute')
                                             ->columnSpan(3),
 
-                                        // ----- ДЛЯ SELECTOR + PERCENT -----
+                                        // ----- SELECTOR + PERCENT -----
                                         TextInput::make('delta_percent')
                                             ->label('Value (%)')
                                             ->numeric()
@@ -348,7 +355,7 @@ class ProductForm
                                                 && ($get('../../pricing_mode') ?? 'absolute') === 'percent')
                                             ->columnSpan(3),
 
-                                        // ----- LEGACY additive (прячетcя при selector) -----
+                                        // ----- LEGACY additive (radio/checkbox) -----
                                         TextInput::make('price_delta_cents')
                                             ->label('Value (cents)')
                                             ->numeric()
@@ -359,7 +366,7 @@ class ProductForm
                                             ], true))
                                             ->columnSpan(3),
 
-                                        // ----- LEGACY percent (прячетcя при selector) -----
+                                        // ----- LEGACY percent (radio_percent/checkbox_percent) -----
                                         TextInput::make('value_percent')
                                             ->label('Value (%)')
                                             ->numeric()
@@ -370,30 +377,6 @@ class ProductForm
                                                 OptionGroup::TYPE_CHECKBOX_PERCENT,
                                             ], true))
                                             ->columnSpan(3),
-
-                                        // Аддитив: +N в валюте
-                                        TextInput::make('price_delta_cents')
-                                            ->label('Value (cents)')
-                                            ->numeric()
-                                            ->default(0)
-                                            ->columnSpan(3)
-                                            ->visible(fn(callable $get) => in_array(($get('../../type') ?? $get('type')), [
-                                                OptionGroup::TYPE_RADIO,
-                                                OptionGroup::TYPE_CHECKBOX,
-                                            ], true)),
-
-                                        // Проценты: +N%
-                                        TextInput::make('value_percent')
-                                            ->label('Value (%)')
-                                            ->numeric()
-                                            ->rule('decimal:0,3')
-                                            ->default(null)
-                                            ->placeholder('e.g., 5 or 12.5')
-                                            ->columnSpan(3)
-                                            ->visible(fn(callable $get) => in_array(($get('../../type') ?? $get('type')), [
-                                                OptionGroup::TYPE_RADIO_PERCENT,
-                                                OptionGroup::TYPE_CHECKBOX_PERCENT,
-                                            ], true)),
 
                                         Toggle::make('is_active')
                                             ->label('Active')
@@ -410,6 +393,81 @@ class ProductForm
                                                 OptionGroup::TYPE_RADIO,
                                                 OptionGroup::TYPE_RADIO_PERCENT,
                                             ], true)),
+
+                                        // ── ограничения ДЛЯ slot и affix: какие классы разрешены ──
+                                        FSelect::make('allow_class_value_ids')
+                                            ->label('Allowed classes')
+                                            ->multiple()
+                                            ->preload()
+                                            ->searchable()
+                                            ->reactive()
+                                            ->options(function (callable $get) {
+                                                // id родительской OptionGroup
+                                                $groupId = $get('../../id');
+                                                if (!$groupId) return [];
+
+                                                // Узнаём product_id текущей группы
+                                                $productId = \App\Models\OptionGroup::query()
+                                                    ->whereKey($groupId)->value('product_id');
+                                                if (!$productId) return [];
+
+                                                // Ищем группу классов внутри того же продукта:
+                                                $classGroup = \App\Models\OptionGroup::query()
+                                                    ->where('product_id', $productId)
+                                                    ->where(function ($q) {
+                                                        $q->whereRaw('LOWER(code) = ?', ['class'])
+                                                            ->orWhereRaw('LOWER(code) LIKE ?', ['%class%'])
+                                                            ->orWhereRaw('LOWER(title) LIKE ?', ['%class%'])
+                                                            ->orWhereRaw('LOWER(title) LIKE ?', ['%класс%']);
+                                                    })
+                                                    ->with(['values' => fn($q) => $q->select('id', 'option_group_id', 'title')->orderBy('position')])
+                                                    ->first();
+
+                                                return $classGroup
+                                                    ? $classGroup->values->pluck('title', 'id')->all()
+                                                    : [];
+                                            })
+                                            // Показываем у slot- и affix-групп:
+                                            ->visible(fn(callable $get) => str_contains((string) strtolower($get('../../code') ?? ''), 'slot')
+                                                || str_contains((string) strtolower($get('../../code') ?? ''), 'affix'))
+                                            ->helperText(fn(callable $get) => $get('../../id') ? null : 'Сохраните группу (и продукт), затем вернитесь.')
+                                            ->columnSpan(6),
+
+                                        // ----- Allowed slots (ТОЛЬКО для AFFIX) -----
+                                        FSelect::make('allow_slot_value_ids')
+                                            ->label('Allowed slots')
+                                            ->multiple()
+                                            ->preload()
+                                            ->searchable()
+                                            ->reactive()
+                                            ->options(function (callable $get) {
+                                                $groupId = $get('../../id');
+                                                if (!$groupId) return [];
+
+                                                $productId = \App\Models\OptionGroup::query()
+                                                    ->whereKey($groupId)->value('product_id');
+                                                if (!$productId) return [];
+
+                                                // Ищем slot-группу в этом же продукте
+                                                $slotGroup = \App\Models\OptionGroup::query()
+                                                    ->where('product_id', $productId)
+                                                    ->where(function ($q) {
+                                                        $q->whereRaw('LOWER(code) = ?', ['slot'])
+                                                            ->orWhereRaw('LOWER(code) LIKE ?', ['%slot%'])
+                                                            ->orWhereRaw('LOWER(title) LIKE ?', ['%slot%'])
+                                                            ->orWhereRaw('LOWER(title) LIKE ?', ['%слот%'])
+                                                            ->orWhereRaw('LOWER(title) LIKE ?', ['%предмет%']);
+                                                    })
+                                                    ->with(['values' => fn($q) => $q->select('id', 'option_group_id', 'title')->orderBy('position')])
+                                                    ->first();
+
+                                                return $slotGroup
+                                                    ? $slotGroup->values->pluck('title', 'id')->all()
+                                                    : [];
+                                            })
+                                            ->visible(fn(callable $get) => str_contains((string) strtolower($get('../../code') ?? ''), 'affix'))
+                                            ->helperText(fn(callable $get) => $get('../../id') ? null : 'Сохраните группу (и продукт), затем вернитесь.')
+                                            ->columnSpan(6),
                                     ])
                                     ->columnSpanFull(),
                             ])
