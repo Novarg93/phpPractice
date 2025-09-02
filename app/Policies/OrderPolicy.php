@@ -11,11 +11,11 @@ class OrderPolicy
 {
     public function view(User $user, Order $order): bool
     {
-        return $order->user_id === $user->id;
+        return $user->id === $order->user_id;
     }
 
-    public function viewAny(User $user): bool
+    public function update(User $user, Order $order): bool
     {
-        return true; // опционально
+        return $user->id === $order->user_id; 
     }
 }

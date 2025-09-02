@@ -10,13 +10,14 @@ class Order extends Model
 {
     protected $fillable = [
         'user_id','status','currency','subtotal_cents','shipping_cents','tax_cents','total_cents',
-        'payment_method','payment_id','placed_at','shipping_address','billing_address','notes',
+        'payment_method','payment_id','placed_at','shipping_address','billing_address','notes', 'game_payload',
     ];
 
     protected $casts = [
         'placed_at' => 'datetime',
         'shipping_address' => 'array',
         'billing_address' => 'array',
+        'game_payload' => 'array',
     ];
 
     public function user(): BelongsTo { return $this->belongsTo(User::class); }

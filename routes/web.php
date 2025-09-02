@@ -59,6 +59,12 @@ Route::get('/catalog', fn() => Inertia::render('Catalog'))->name('catalog');
 
 Route::get('/games', [GameController::class, 'index'])->name('games.index');
 
+Route::post('/checkout/nickname', [CheckoutController::class, 'saveNickname'])
+    ->name('checkout.nickname');
+
+Route::post('/orders/{order}/nickname', [OrderController::class, 'saveNickname'])
+    ->name('orders.nickname');
+
 Route::scopeBindings()->group(function () {
     Route::get('/games/{game:slug}', [CatalogController::class, 'index'])->name('games.show');
     Route::get('/games/{game:slug}/{category:slug}', [CatalogController::class, 'index'])->name('categories.show');

@@ -99,8 +99,34 @@ class CheckoutController extends Controller
                 'total_cents' => $cart->items->sum('line_total_cents'),
                 'currency' => 'USD',
             ],
+            'nickname' => $request->session()->get('checkout.nickname'),
         ]);
     }
+
+
+    public function saveNickname(Request $request)
+    {
+        $data = $request->validate([
+            'nickname' => [
+                'nullable',
+                'string',
+                'min:2',
+                'max:30',
+                'regex:/^[A-Za-z0-9_]+$/', // латиница/цифры/подчёркивание, без пробелов
+            ],
+        ], [
+            'nickname.regex' => 'Ник может содержать только латинские буквы, цифры и подчёркивание (_), без пробелов.',
+        ]);
+
+        if (filled($data['nickname'])) {
+            $request->session()->put('checkout.nickname', $data['nickname']);
+        } else {
+            $request->session()->forget('checkout.nickname');
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
 
     /**
      * Создаёт Stripe Checkout Session и возвращает его id/url
@@ -185,7 +211,7 @@ class CheckoutController extends Controller
         $currentId = (int) Auth::id();
         abort_unless($currentId === $userId, 403, 'Wrong user');
 
-        $order = DB::transaction(function () use ($userId, $sessionId) { // 👈 добавили $sessionId
+        $order = DB::transaction(function () use ($userId, $sessionId, $request) { // 👈 добавили $sessionId
             $cart = Cart::firstOrCreate(['user_id' => $userId])
                 ->load(['items.product', 'items.options.group']);
             abort_if($cart->items->isEmpty(), 422, 'Cart is empty');
@@ -206,6 +232,9 @@ class CheckoutController extends Controller
                 'payment_method' => 'stripe',
                 'payment_id' => $sessionId, // ✅ теперь доступна
                 'placed_at' => now(),
+                'game_payload' => [
+                    'nickname' => $request->session()->pull('checkout.nickname'), // 👈 достали и очистили
+                ],
             ]);
 
             // снапшотим айтемы
@@ -225,7 +254,7 @@ class CheckoutController extends Controller
                         $oi->options()->create([
                             'option_value_id'   => $opt->option_value_id,
                             'title'             => $ov?->title ?? 'Option',
-                            'price_delta_cents' => (int)($ov?->price_delta_cents ?? 0),
+                            'price_delta_cents' => (int)($opt->price_delta_cents ?? 0),
                         ]);
                         continue;
                     }
@@ -235,8 +264,8 @@ class CheckoutController extends Controller
                         $oi->options()->create([
                             'option_value_id'   => null,
                             'option_group_id'   => $opt->option_group_id,
-                            'title'             => $opt->group?->title ?? 'Range', // ✅ берём group title
-                            'price_delta_cents' => (int)($ov?->delta_cents ?? $ov?->price_delta_cents ?? 0),
+                            'title'             => $opt->group?->title ?? 'Range',
+                            'price_delta_cents' => (int)($opt->price_delta_cents ?? 0), // ← было $ov...
                             'selected_min'      => (int)($opt->selected_min ?? 0),
                             'selected_max'      => (int)($opt->selected_max ?? 0),
                             'payload_json'      => $opt->payload_json ?? null,
@@ -259,6 +288,7 @@ class CheckoutController extends Controller
 
         return redirect()->route('orders.show', $order)->with('success', 'Order placed!');
     }
+
 
     public function cancel()
     {

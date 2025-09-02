@@ -24,8 +24,35 @@ class OrderController extends Controller
                 'placed_at' => optional($o->placed_at)->toDateTimeString(),
                 'total_cents' => $o->total_cents,
                 'items_count' => $o->items_count,
+                'game_payload'   => $o->game_payload,
+                'nickname'       => $o->game_payload['nickname'] ?? null,
+                'needs_nickname' => empty($o->game_payload['nickname'] ?? null),
             ]),
         ]);
+    }
+
+    public function saveNickname(Request $request, Order $order)
+    {
+        $this->authorize('update', $order);
+
+        $data = $request->validate([
+            'nickname' => [
+                'required',
+                'string',
+                'min:2',
+                'max:30',
+                'regex:/^[A-Za-z0-9_]+$/',
+            ],
+        ], [
+            'nickname.regex' => 'No spaces',
+        ]);
+
+        $payload = $order->game_payload ?? [];
+        $payload['nickname'] = $data['nickname'];
+        $order->game_payload = $payload;
+        $order->save();
+
+        return response()->json(['ok' => true, 'nickname' => $data['nickname']]);
     }
 
     public function show(Order $order)
@@ -47,6 +74,11 @@ class OrderController extends Controller
                 'total_cents' => $order->total_cents,
                 'currency' => $order->currency,
                 'shipping_address' => $order->shipping_address,
+
+                'game_payload'   => $order->game_payload,
+                'nickname'       => $order->game_payload['nickname'] ?? null,
+                'needs_nickname' => empty($order->game_payload['nickname'] ?? null),
+
 
                 'items' => $order->items->map(function ($i) {
                     // value-опции (radio/checkbox): как в корзине/чекауте
