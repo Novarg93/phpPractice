@@ -7,6 +7,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 
+
+
+
+
 class OptionGroup extends Model
 {
     // ── типы (legacy + новый канонический) ────────────────────────────────
@@ -58,16 +62,16 @@ class OptionGroup extends Model
         'max_span',
         'rounding',
         'currency',
-        'code',  
+        'code',
     ];
 
     protected function code(): Attribute
-{
-    return Attribute::make(
-        get: fn ($v) => $v,
-        set: fn ($v) => $v ? strtolower(trim($v)) : null,
-    );
-}
+    {
+        return Attribute::make(
+            get: fn($v) => $v,
+            set: fn($v) => $v ? strtolower(trim($v)) : null,
+        );
+    }
 
     protected $casts = [
         'is_required'     => 'bool',
@@ -100,5 +104,17 @@ class OptionGroup extends Model
                 }
             }
         });
+        static::saving(function (\App\Models\OptionGroup $g) {
+            if ($g->type === \App\Models\OptionGroup::TYPE_SELECTOR) {
+                if (!in_array($g->pricing_mode, ['absolute', 'percent'], true)) {
+                    $g->pricing_mode = 'absolute';
+                }
+            } elseif ($g->type === \App\Models\OptionGroup::TYPE_RANGE) {
+                if (!in_array($g->pricing_mode, ['flat', 'tiered'], true)) {
+                    $g->pricing_mode = 'flat';
+                }
+            }
+        });
+        
     }
 }

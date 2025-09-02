@@ -143,6 +143,42 @@ class ProductForm
                             ->defaultItems(0)
                             ->collapsed()
                             ->columns(12)
+
+                            ->mutateRelationshipDataBeforeCreateUsing(function (array $data) {
+                                $type = $data['type'] ?? null;
+
+                                if ($type === \App\Models\OptionGroup::TYPE_SELECTOR) {
+                                    // 1) пробуем взять из selector_pricing_mode (UI)
+                                    // 2) если вдруг его нет (редактирование старых записей) — fallback на pricing_mode из БД/стейта
+                                    $pm = $data['selector_pricing_mode'] ?? $data['pricing_mode'] ?? null;
+                                    $data['pricing_mode'] = in_array($pm, ['absolute', 'percent'], true) ? $pm : 'absolute';
+                                } elseif ($type === \App\Models\OptionGroup::TYPE_RANGE) {
+                                    $pm = $data['range_pricing_mode'] ?? $data['pricing_mode'] ?? null;
+                                    $data['pricing_mode'] = in_array($pm, ['flat', 'tiered'], true) ? $pm : 'flat';
+                                } else {
+                                    // для остальных типов это поле нам не нужно, но если пришло — не даём мусору попасть
+                                    if (!in_array(($data['pricing_mode'] ?? null), ['absolute', 'percent', 'flat', 'tiered', null], true)) {
+                                        $data['pricing_mode'] = null;
+                                    }
+                                }
+
+                                unset($data['selector_pricing_mode'], $data['range_pricing_mode']);
+                                return $data;
+                            })
+                            ->mutateRelationshipDataBeforeSaveUsing(function (array $data) {
+                                $type = $data['type'] ?? null;
+
+                                if ($type === \App\Models\OptionGroup::TYPE_SELECTOR) {
+                                    $pm = $data['selector_pricing_mode'] ?? $data['pricing_mode'] ?? null;
+                                    $data['pricing_mode'] = in_array($pm, ['absolute', 'percent'], true) ? $pm : 'absolute';
+                                } elseif ($type === \App\Models\OptionGroup::TYPE_RANGE) {
+                                    $pm = $data['range_pricing_mode'] ?? $data['pricing_mode'] ?? null;
+                                    $data['pricing_mode'] = in_array($pm, ['flat', 'tiered'], true) ? $pm : 'flat';
+                                }
+
+                                unset($data['selector_pricing_mode'], $data['range_pricing_mode']);
+                                return $data;
+                            })
                             ->schema([
 
                                 // ── ШАПКА ГРУППЫ: на всю ширину ─────────────────────────────
@@ -186,23 +222,25 @@ class ProductForm
                                         ->label('Selection')
                                         ->options(['single' => 'Single', 'multi' => 'Multi'])
                                         ->visible(fn(callable $get) => $get('type') === OptionGroup::TYPE_SELECTOR)
-                                        ->required()
+                                        ->required(fn($get) => $get('type') === OptionGroup::TYPE_SELECTOR)
                                         ->native(false)
                                         ->columnSpan(6),
 
-                                    Select::make('pricing_mode')
+                                    Select::make('selector_pricing_mode')
                                         ->label('Pricing')
                                         ->options([
                                             'absolute' => 'Absolute (+N cents)',
                                             'percent'  => 'Percent (+N%)',
                                         ])
-                                        ->visible(fn(callable $get) => $get('type') === OptionGroup::TYPE_SELECTOR)
-                                        ->required(fn(callable $get) => $get('type') === OptionGroup::TYPE_SELECTOR)
+                                        ->default('absolute')
+                                        ->visible(fn($get) => $get('type') === \App\Models\OptionGroup::TYPE_SELECTOR)
+                                        ->required(fn($get) => $get('type') === \App\Models\OptionGroup::TYPE_SELECTOR)
+                                        ->reactive()
                                         ->live()
-                                        ->dehydrated(fn(callable $get) => $get('type') === OptionGroup::TYPE_SELECTOR)
-                                        ->afterStateHydrated(function ($state, callable $set, callable $get) {
-                                            if ($get('type') === OptionGroup::TYPE_SELECTOR && ! in_array($state, ['absolute', 'percent'], true)) {
-                                                $set('pricing_mode', 'absolute'); // дефолт для selector
+                                        ->afterStateHydrated(function ($state, $set, $get) {
+                                            if ($get('type') === \App\Models\OptionGroup::TYPE_SELECTOR) {
+                                                $pm = $get('pricing_mode');
+                                                $set('selector_pricing_mode', in_array($pm, ['absolute', 'percent'], true) ? $pm : 'absolute');
                                             }
                                         })
                                         ->native(false)
@@ -245,19 +283,22 @@ class ProductForm
                                         TextInput::make('range_default_min')->label('Default min')->numeric()->nullable()->columnSpan(3),
                                         TextInput::make('range_default_max')->label('Default max')->numeric()->nullable()->columnSpan(3),
 
-                                        Select::make('pricing_mode')
+                                        Select::make('range_pricing_mode')
                                             ->label('Pricing mode')
+                                            ->reactive()
                                             ->options([
                                                 'flat'   => 'Flat per level',
                                                 'tiered' => 'Tiered',
                                             ])
-                                            ->visible(fn(callable $get) => $get('type') === OptionGroup::TYPE_RANGE)
-                                            ->required(fn(callable $get) => $get('type') === OptionGroup::TYPE_RANGE)
+                                            ->default('flat')
+                                            ->visible(fn($get) => $get('type') === \App\Models\OptionGroup::TYPE_RANGE)
+                                            ->required(fn($get) => $get('type') === \App\Models\OptionGroup::TYPE_RANGE)
+                                            ->reactive()
                                             ->live()
-                                            ->dehydrated(fn(callable $get) => $get('type') === OptionGroup::TYPE_RANGE)
-                                            ->afterStateHydrated(function ($state, callable $set, callable $get) {
-                                                if ($get('type') === OptionGroup::TYPE_RANGE && ! in_array($state, ['flat', 'tiered'], true)) {
-                                                    $set('pricing_mode', 'flat');
+                                            ->afterStateHydrated(function ($state, $set, $get) {
+                                                if ($get('type') === \App\Models\OptionGroup::TYPE_RANGE) {
+                                                    $pm = $get('pricing_mode');
+                                                    $set('range_pricing_mode', in_array($pm, ['flat', 'tiered'], true) ? $pm : 'flat');
                                                 }
                                             })
                                             ->native(false)
@@ -268,7 +309,7 @@ class ProductForm
                                             ->label('Unit price (cents)')
                                             ->numeric()
                                             ->minValue(0)
-                                            ->visible(fn(callable $get) => $get('pricing_mode') === 'flat')
+                                            ->visible(fn($get) => ($get('range_pricing_mode') ?? 'flat') === 'flat')
                                             ->columnSpan(4),
 
 
@@ -276,7 +317,7 @@ class ProductForm
                                         // TIERED
                                         FRepeater::make('tiers_json')
                                             ->label('Tiers')
-                                            ->visible(fn(callable $get) => $get('pricing_mode') === 'tiered')
+                                            ->visible(fn($get) => ($get('range_pricing_mode') ?? 'flat') === 'tiered')
                                             ->reactive()
                                             ->defaultItems(0)
                                             ->schema([
@@ -298,7 +339,7 @@ class ProductForm
                                                 'highest_tier_only' => 'Apply highest tier to whole span',
                                                 'weighted_average'  => 'Weighted average',
                                             ])
-                                            ->visible(fn(callable $get) => $get('pricing_mode') === 'tiered')
+                                            ->visible(fn($get) => ($get('range_pricing_mode') ?? 'flat') === 'tiered')
                                             ->default('sum_piecewise')
                                             ->native(false)
                                             ->columnSpan(6),
@@ -325,34 +366,82 @@ class ProductForm
                                     ->defaultItems(0)
                                     ->collapsed()
                                     ->columns(12)
-                                    ->visible(fn(callable $get) => ! in_array(($get('../../type') ?? $get('type')), [
-                                        OptionGroup::TYPE_SLIDER,
-                                        OptionGroup::TYPE_RANGE,
-                                    ], true))
+
+                                    // ⬇️ ВСЯ запись значений — только тут
+                                    ->mutateRelationshipDataBeforeCreateUsing(function (array $data, callable $get) {
+                                        $type = $get('../../type');
+                                        if ($type !== OptionGroup::TYPE_SELECTOR) return $data; // legacy не трогаем
+
+                                        $mode = $get('../../selector_pricing_mode') ?? 'absolute';
+                                        if ($mode === 'percent') {
+                                            $data['delta_percent']     = $data['delta_percent'] ?? null;
+                                            $data['delta_cents']       = null;
+                                            $data['price_delta_cents'] = null;
+                                            $data['value_percent']     = $data['delta_percent'];
+                                        } else {
+                                            $data['delta_cents']       = $data['delta_cents'] ?? 0;
+                                            $data['delta_percent']     = null;
+                                            $data['value_percent']     = null;
+                                        }
+                                        return $data;
+                                    })
+                                    ->mutateRelationshipDataBeforeSaveUsing(function (array $data, callable $get) {
+                                        $type = $get('../../type');
+                                        if ($type !== OptionGroup::TYPE_SELECTOR) return $data; // legacy не трогаем
+
+                                        $mode = $get('../../selector_pricing_mode') ?? 'absolute';
+                                        if ($mode === 'percent') {
+                                            $data['delta_cents']       = null;
+                                            $data['price_delta_cents'] = null;
+                                            $data['value_percent']     = $data['delta_percent'];
+                                        } else {
+                                            $data['delta_cents']       = $data['delta_cents'] ?? 0;
+                                            $data['delta_percent']     = null;
+                                            $data['value_percent']     = null;
+                                        }
+                                        return $data;
+                                    })
+
                                     ->schema([
                                         TextInput::make('title')
                                             ->label('Option title')
                                             ->required()
                                             ->columnSpan(6),
 
-                                        // ----- SELECTOR + ABSOLUTE -----
+                                        // ABSOLUTE
                                         TextInput::make('delta_cents')
                                             ->label('Value (cents)')
                                             ->numeric()
                                             ->minValue(0)
                                             ->default(0)
-                                            ->visible(fn(callable $get) => $get('../../type') === OptionGroup::TYPE_SELECTOR
-                                                && ($get('../../pricing_mode') ?? 'absolute') === 'absolute')
+                                            ->visible(
+                                                fn($get) =>
+                                                $get('../../type') === OptionGroup::TYPE_SELECTOR
+                                                    && ($get('../../selector_pricing_mode') ?? 'absolute') === 'absolute'
+                                            )
+                                            ->dehydrated(
+                                                fn($get) => // 👈 дехидрируем только когда поле реально активно
+                                                $get('../../type') === OptionGroup::TYPE_SELECTOR
+                                                    && ($get('../../selector_pricing_mode') ?? 'absolute') === 'absolute'
+                                            )
                                             ->columnSpan(3),
 
-                                        // ----- SELECTOR + PERCENT -----
+                                        // PERCENT
                                         TextInput::make('delta_percent')
                                             ->label('Value (%)')
                                             ->numeric()
                                             ->rule('decimal:0,3')
                                             ->default(null)
-                                            ->visible(fn(callable $get) => $get('../../type') === OptionGroup::TYPE_SELECTOR
-                                                && ($get('../../pricing_mode') ?? 'absolute') === 'percent')
+                                            ->visible(
+                                                fn($get) =>
+                                                $get('../../type') === OptionGroup::TYPE_SELECTOR
+                                                    && ($get('../../selector_pricing_mode') ?? 'absolute') === 'percent'
+                                            )
+                                            ->dehydrated(
+                                                fn($get) => // 👈 дехидрируем только в percent
+                                                $get('../../type') === OptionGroup::TYPE_SELECTOR
+                                                    && ($get('../../selector_pricing_mode') ?? 'absolute') === 'percent'
+                                            )
                                             ->columnSpan(3),
 
                                         // ----- LEGACY additive (radio/checkbox) -----
