@@ -19,6 +19,8 @@ class ProductController extends Controller
 
         $product->load([
             'optionGroups.values' => fn($q) => $q->where('is_active', true),
+            'optionGroups.bundleItems.product.optionGroups' => fn($q) =>
+            $q->select('id', 'product_id', 'type', 'qty_min', 'qty_max', 'qty_step', 'qty_default'),
         ]);
 
         return Inertia::render('Product/Show', [
@@ -72,6 +74,43 @@ class ProductController extends Controller
                                     // ✅ уже int[]
                                     'allow_class_value_ids' => $allowClass,
                                     'allow_slot_value_ids'  => $allowSlot,
+                                ];
+                            })->values(),
+                        ]);
+                    }
+
+                    if ($g->type === \App\Models\OptionGroup::TYPE_BUNDLE) {
+                        return array_merge($base, [
+                            'type'  => 'bundle',
+                            'items' => $g->bundleItems->map(function ($bi) {
+                                $p = $bi->product;
+
+                                // приоритет qty: overrides -> slider group -> поля продукта -> дефолты
+                                $slider = $p->optionGroups->firstWhere('type', \App\Models\OptionGroup::TYPE_SLIDER);
+
+                                $min  = (int)($bi->qty_min ?? $slider->qty_min ?? $p->qty_min ?? 1);
+                                $max  = (int)max($min, $bi->qty_max ?? $slider->qty_max ?? $p->qty_max ?? 9999);
+                                $step = (int)max(1,   $bi->qty_step ?? $slider->qty_step ?? $p->qty_step ?? 1);
+                                $def  = (int)($bi->qty_default ?? $slider->qty_default ?? $p->qty_default ?? $min);
+                                $def  = max($min, min($def, $max));
+
+                                // ограничим складом, если трекается
+                                if ($p->track_inventory && $p->stock !== null) {
+                                    $max = max($min, min($max, (int)$p->stock));
+                                    $def = max($min, min($def, $max));
+                                }
+
+                                return [
+                                    'product_id'  => (int) $p->id,
+                                    'name'        => $p->name,
+                                    'image_url'   => $p->image_url,
+                                    'price_cents' => (int) $p->price_cents,
+                                    'qty'         => [
+                                        'min'     => $min,
+                                        'max'     => $max,
+                                        'step'    => $step,
+                                        'default' => $def,
+                                    ],
                                 ];
                             })->values(),
                         ]);

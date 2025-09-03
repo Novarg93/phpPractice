@@ -22,6 +22,7 @@ class OptionGroup extends Model
     public const TYPE_CHECKBOX_PERCENT = 'checkbox_percent';
     public const TYPE_SLIDER           = 'quantity_slider';
     public const TYPE_RANGE            = 'double_range_slider';
+    public const TYPE_BUNDLE = 'bundle';
 
     // Режимы селектора (для удобства)
     public const SEL_SINGLE  = 'single';
@@ -87,6 +88,11 @@ class OptionGroup extends Model
     public function values(): HasMany
     {
         return $this->hasMany(OptionValue::class)->orderBy('position');
+    }
+
+    public function bundleItems(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\BundleItem::class)->orderBy('position');
     }
 
     protected static function booted()

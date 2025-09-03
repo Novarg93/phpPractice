@@ -14,6 +14,8 @@ use Filament\Forms\Components\Repeater;
 use Filament\Schemas\Components\Section as UiSection;
 use Filament\Forms\Components\Select as FSelect;
 use Filament\Forms\Get;
+use Filament\Schemas\Components\Fieldset;
+
 
 use App\Models\OptionGroup;
 use Filament\Schemas\Components\Grid as UiGrid;
@@ -206,6 +208,7 @@ class ProductForm
                                             OptionGroup::TYPE_SLIDER           => 'QuantitySlider',
                                             OptionGroup::TYPE_RANGE            => 'DoubleRangeSlider',
                                             OptionGroup::TYPE_SELECTOR         => 'Selector (single / multi)',
+                                            \App\Models\OptionGroup::TYPE_BUNDLE => 'Bundle (currency mix)',
                                         ])
                                         ->native(false)
                                         ->required()
@@ -346,6 +349,57 @@ class ProductForm
 
                                         TextInput::make('base_fee_cents')->label('Base fee (cents)')->numeric()->minValue(0)->nullable()->columnSpan(3),
                                         TextInput::make('max_span')->label('Max span')->numeric()->minValue(1)->nullable()->columnSpan(3),
+                                    ]),
+
+                                // ── Блок для BUNDLE: список «каких готовых товаров можно добавлять» ──
+                                \Filament\Schemas\Components\Grid::make(12)
+                                    ->visible(fn(callable $get) => $get('type') === \App\Models\OptionGroup::TYPE_BUNDLE)
+                                    ->columnSpanFull()
+                                    ->schema([
+                                        \Filament\Forms\Components\Repeater::make('bundleItems')
+                                            ->relationship()
+                                            ->label('Bundle items (allowed products)')
+                                            ->orderColumn('position')
+                                            ->defaultItems(0)
+                                            ->columns(12)
+                                            ->schema([
+                                                \Filament\Forms\Components\Select::make('product_id')
+                                                    ->label('Product')
+                                                    ->searchable()
+                                                    ->preload()
+                                                    ->required()
+                                                    // (опциональный фильтр) показывать только currency-товары этой же игры:
+                                                    ->options(function (callable $get) {
+                                                        // узнаём продукт, для которого редактируется группа
+                                                        /** @var \App\Models\Product|null $record */
+                                                        $record = request()->route('record');
+                                                        $gameId = $record?->category?->game_id;
+
+                                                        $q = \App\Models\Product::query()->active()->with('category.game');
+                                                        if ($gameId) {
+                                                            $q->where(function ($qq) use ($gameId) {
+                                                                $qq->whereHas('category', fn($c) => $c->where('game_id', $gameId)->where('type', 'currency'))
+                                                                    ->orWhereHas('categories', fn($c) => $c->where('game_id', $gameId)->where('type', 'currency'));
+                                                            });
+                                                        }
+                                                        return $q->orderBy('name')->pluck('name', 'id');
+                                                    })
+                                                    ->columnSpan(6),
+
+                                                \Filament\Forms\Components\TextInput::make('position')
+                                                    ->numeric()->minValue(0)->default(0)->columnSpan(2),
+
+                                                Fieldset::make('Qty overrides (optional)')
+                                                    ->columns(4)
+                                                    ->schema([
+                                                        \Filament\Forms\Components\TextInput::make('qty_min')->numeric()->minValue(1)->label('Min'),
+                                                        \Filament\Forms\Components\TextInput::make('qty_max')->numeric()->minValue(1)->label('Max'),
+                                                        \Filament\Forms\Components\TextInput::make('qty_step')->numeric()->minValue(1)->label('Step'),
+                                                        \Filament\Forms\Components\TextInput::make('qty_default')->numeric()->minValue(1)->label('Default'),
+                                                    ])
+                                                    ->columnSpan(12),
+                                            ])
+                                            ->columnSpan(12),
                                     ]),
 
                                 // ── БЛОК НАСТРОЕК ДЛЯ quantity_slider: отдельным блоком, на всю ширину ─────

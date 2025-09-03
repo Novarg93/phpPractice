@@ -50,6 +50,20 @@ const classModel = computed<number | null>({
   },
 })
 
+const bundleCents = computed(() => {
+  const groups = (props.product.option_groups ?? []).filter((g: any) => g.type === 'bundle')
+  let sum = 0
+  for (const g of groups) {
+    const sel = (selectionByGroup.value as any)[g.id]
+    if (!Array.isArray(sel) || !sel.length) continue
+    for (const row of sel) {
+      const it = g.items?.find((i: any) => i.product_id === row.product_id)
+      if (!it) continue
+      sum += (it.price_cents || 0) * (Number(row.qty) || 0)
+    }
+  }
+  return sum
+})
 
 // СЛОТ — всегда number|null
 const slotModel = computed<number | null>({
@@ -150,26 +164,56 @@ function formatPrice(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((cents || 0) / 100)
 }
 
-const displayCents = computed(() => (qtyGroup ? unitCents.value : totalCents.value))
+const displayCents = computed(() => (qtyGroup ? unitCents.value : totalCents.value) + bundleCents.value)
 
 async function addToCart() {
   errors.value = []
-  triedToSubmit.value = true   // ← включаем подсветку required
+  triedToSubmit.value = true
 
   if (!canAddToCart.value) {
     errors.value.push('Заполните обязательные опции перед добавлением в корзину.')
     return
   }
 
-  if (submitting.value) return  // защита от дабл-клика
+  if (submitting.value) return
   submitting.value = true
   try {
+    // 1) найдём все bundle-группы
+    const bundleGroups = (props.product.option_groups ?? []).filter((g: any) => g.type === 'bundle')
+
+    // 2) соберём выбранные строки из selectionByGroup
+    const bundleRows: Array<{ product_id: number; qty: number }> = []
+    for (const g of bundleGroups) {
+      const sel = (selectionByGroup.value as any)[g.id]
+      if (Array.isArray(sel)) {
+        for (const row of sel) {
+          if (row?.product_id && row?.qty > 0) {
+            bundleRows.push({ product_id: Number(row.product_id), qty: Number(row.qty) })
+          }
+        }
+      }
+    }
+
+    // 3A) если есть bundle-строки — отправим их по одной (простой путь)
+    if (bundleRows.length) {
+      for (const row of bundleRows) {
+        await axios.post('/cart/add', {
+          product_id: row.product_id,
+          qty: row.qty,
+        })
+      }
+      await loadSummary()
+      return
+    }
+
+    // 3B) иначе — обычное добавление текущего продукта (как было)
     const payload = buildAddToCartPayload()
     const { data } = await axios.post('/cart/add', payload)
     if (data && data.summary) cartSummary.value = data.summary
     else await loadSummary()
   } catch (e: any) {
-    // ... твой парсинг ошибок как было
+    // твоя обработка ошибок
+    errors.value.push(e?.response?.data?.message || 'Failed to add to cart')
   } finally {
     submitting.value = false
   }

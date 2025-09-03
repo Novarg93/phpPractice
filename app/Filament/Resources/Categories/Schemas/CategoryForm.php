@@ -23,7 +23,7 @@ class CategoryForm
                 TextInput::make('name')
                     ->required()
                     ->maxLength(255)
-                    ->live(debounce: 300)
+                    ->live(onBlur: true)
                     ->afterStateUpdated(fn ($state, callable $set) =>
                         $set('slug', Str::slug((string) $state))
                     ),
