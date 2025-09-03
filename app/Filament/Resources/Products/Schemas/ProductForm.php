@@ -365,25 +365,18 @@ class ProductForm
                                             ->schema([
                                                 \Filament\Forms\Components\Select::make('product_id')
                                                     ->label('Product')
+                                                    ->required()
                                                     ->searchable()
                                                     ->preload()
-                                                    ->required()
-                                                    // (опциональный фильтр) показывать только currency-товары этой же игры:
-                                                    ->options(function (callable $get) {
-                                                        // узнаём продукт, для которого редактируется группа
-                                                        /** @var \App\Models\Product|null $record */
-                                                        $record = request()->route('record');
-                                                        $gameId = $record?->category?->game_id;
-
-                                                        $q = \App\Models\Product::query()->active()->with('category.game');
-                                                        if ($gameId) {
-                                                            $q->where(function ($qq) use ($gameId) {
-                                                                $qq->whereHas('category', fn($c) => $c->where('game_id', $gameId)->where('type', 'currency'))
-                                                                    ->orWhereHas('categories', fn($c) => $c->where('game_id', $gameId)->where('type', 'currency'));
-                                                            });
-                                                        }
-                                                        return $q->orderBy('name')->pluck('name', 'id');
-                                                    })
+                                                    // отдаём все товары, без ограничений
+                                                    ->options(
+                                                        fn() => \App\Models\Product::query()
+                                                            ->orderBy('name')
+                                                            ->pluck('name', 'id')
+                                                            ->all()
+                                                    )
+                                                    // чтобы корректно показывалиcь лейблы у уже сохранённых значений
+                                                    ->getOptionLabelUsing(fn($value) => \App\Models\Product::find($value)?->name ?? "#{$value}")
                                                     ->columnSpan(6),
 
                                                 \Filament\Forms\Components\TextInput::make('position')
