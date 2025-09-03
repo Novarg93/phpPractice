@@ -17,7 +17,16 @@ window.Echo.connector.pusher.connection.bind('connected', () => {
 
 window.Echo.channel('contact-messages')
   .subscribed(() => console.log('[Echo] subscribed to contact-messages ✅'))
+  window.Echo.channel('contact-messages')
   .listen('.created', (e) => {
-    console.log('[Echo] event received:', e)   // <- должен появиться при новом сообщении
+    console.debug('[Echo] created', e)
+    window.dispatchEvent(new CustomEvent('realtime-contact'))
+  })
+  .listen('.status-changed', (e) => {
+    console.debug('[Echo] status-changed', e)
+    window.dispatchEvent(new CustomEvent('realtime-contact'))
+  })
+  .listen('.deleted', (e) => {
+    console.debug('[Echo] deleted', e)
     window.dispatchEvent(new CustomEvent('realtime-contact'))
   })

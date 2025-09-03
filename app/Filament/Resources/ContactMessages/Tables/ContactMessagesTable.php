@@ -3,7 +3,7 @@
 namespace App\Filament\Resources\ContactMessages\Tables;
 
 use Filament\Actions\Action;
-use Filament\Actions\ViewAction;
+use Filament\Actions\BulkAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
@@ -12,6 +12,9 @@ use Filament\Tables\Table;
 use Filament\Forms\Components\DatePicker;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
+use App\Events\ContactMessageStatusChanged;
+use App\Events\ContactMessageDeleted;
+
 
 
 final class ContactMessagesTable
@@ -28,7 +31,7 @@ final class ContactMessagesTable
 
                 TextColumn::make('name')
                     ->label('Name')
-                    ->getStateUsing(fn ($record) => "{$record->first_name} {$record->last_name}")
+                    ->getStateUsing(fn($record) => "{$record->first_name} {$record->last_name}")
                     ->searchable(),
 
                 TextColumn::make('email')
@@ -38,7 +41,7 @@ final class ContactMessagesTable
                 TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         'new'         => 'warning',
                         'in_progress' => 'info',
                         'done'        => 'success',
@@ -68,45 +71,64 @@ final class ContactMessagesTable
                     ])
                     ->query(function (Builder $query, array $data) {
                         return $query
-                            ->when($data['from'] ?? null, fn ($q, $date) => $q->whereDate('created_at', '>=', $date))
-                            ->when($data['to'] ?? null, fn ($q, $date) => $q->whereDate('created_at', '<=', $date));
+                            ->when($data['from'] ?? null, fn($q, $date) => $q->whereDate('created_at', '>=', $date))
+                            ->when($data['to'] ?? null, fn($q, $date) => $q->whereDate('created_at', '<=', $date));
                     }),
             ])
             ->recordActions([
-                ViewAction::make(),
+
                 EditAction::make(),
+                    
 
                 Action::make('assignToMe')
                     ->label('Assign to me')
-                    ->action(fn ($record) => $record->update([
-                        'handled_by' => Auth::id(),
-                        'status'     => 'in_progress',
-                    ])),
+                    ->action(function ($record) {
+                        $record->update([
+                            'handled_by' => Auth::id(),
+                            'status' => 'in_progress',
+                        ]);
+                        event(new ContactMessageStatusChanged($record->id, $record->status));
+                    }),
 
                 Action::make('markDone')
                     ->label('Mark done')
                     ->color('success')
                     ->requiresConfirmation()
-                    ->action(fn ($record) => $record->update([
-                        'status'     => 'done',
-                        'handled_at' => now(),
-                    ])),
+                    ->action(function ($record) {
+                        $record->update([
+                            'status' => 'done',
+                            'handled_at' => now(),
+                            'handled_by'  => $record->handled_by ?: Auth::id(),
+                        ]);
+                        event(new ContactMessageStatusChanged($record->id, $record->status));
+                    }),
 
                 Action::make('reply')
                     ->label('Reply')
-                    ->url(fn ($record) => "mailto:{$record->email}?subject=Re:%20your%20message")
+                    ->url(fn($record) => "mailto:{$record->email}?subject=Re:%20your%20message")
                     ->openUrlInNewTab(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make(),
-                    Action::make('markSelectedDone')
+                    // стандартное удаление — повесим after() чтобы оповестить
+                    DeleteBulkAction::make()
+                        ->after(function ($records) {
+                            foreach ($records as $record) {
+                                event(new ContactMessageDeleted($record->id));
+                            }
+                        }),
+
+                    BulkAction::make('markDone')
                         ->label('Mark selected as done')
-                        ->color('success')
-                        ->action(fn ($records) => $records->each->update([
-                            'status'     => 'done',
-                            'handled_at' => now(),
-                        ])),
+                        ->action(function ($records) {
+                            $records->each->update([
+                                'status' => 'done',
+                                'handled_at' => now(),
+                            ]);
+                            foreach ($records as $r) {
+                                event(new ContactMessageStatusChanged($r->id, $r->status));
+                            }
+                        }),
                 ]),
             ]);
     }

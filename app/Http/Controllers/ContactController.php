@@ -22,6 +22,7 @@ class ContactController extends Controller
         'message'    => $data['message'],
         'ip'         => $request->ip(),
         'user_agent' => (string) $request->userAgent(),
+        'status'     => 'new',
     ]);
     event(new \App\Events\ContactMessageCreated($msg));
     try {
