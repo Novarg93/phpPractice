@@ -122,7 +122,7 @@ onMounted(() => loadSummary())
                         <Link class="hover:underline " :href="route('login')">Reviews</Link>
                     </li>
                     <li>
-                        <Link class="hover:underline " :href="route('login')">Contact Us</Link>
+                        <Link class="hover:underline " :href="route('contact.show')">Contact Us</Link>
                     </li>
                 </ul>
             </nav>

@@ -9,11 +9,16 @@ use App\Http\Controllers\{
     CatalogController,
     CartController,
     PageController,
-    PostController
+    PostController,
+    ContactController
 };
 use Illuminate\Foundation\Application;
+
+
+
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
 
 Route::get('/', fn() => Inertia::render('Welcome', [
     'canLogin' => Route::has('login'),
@@ -21,6 +26,8 @@ Route::get('/', fn() => Inertia::render('Welcome', [
     'laravelVersion' => Application::VERSION,
     'phpVersion' => PHP_VERSION,
 ]))->name('home');
+
+
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard'))->name('dashboard');
@@ -56,6 +63,12 @@ Route::prefix('cart')->group(function () {
 Route::get('/legal/{page:code}', [PageController::class, 'show'])->name('legal.show');
 
 Route::get('/catalog', fn() => Inertia::render('Catalog'))->name('catalog');
+
+Route::get('/contact', fn() => Inertia::render('Contact/Show'))->name('contact.show');
+
+Route::post('/contact/send', [ContactController::class, 'send'])
+    ->middleware('throttle:5,1') 
+    ->name('contact.send');
 
 Route::get('/games', [GameController::class, 'index'])->name('games.index');
 

@@ -1,55 +1,74 @@
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, reactive, watch } from "vue";
 import { Button } from "./ui/button";
 import { Card, CardHeader, CardContent, CardFooter } from "./ui/card";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
+import { useForm, usePage } from '@inertiajs/vue3';
 import { Textarea } from "./ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/Components/ui/alert";
-
 import { AlertCircle, Building2, Phone, Mail, Clock } from "lucide-vue-next";
 
 interface ContactFormeProps {
   firstName: string;
   lastName: string;
   email: string;
-  subject: string;
   message: string;
 }
 
-const contactForm = reactive<ContactFormeProps>({
-  firstName: "",
-  lastName: "",
-  email: "",
-  subject: "Web Development",
-  message: "",
+interface FlashProps {
+  success?: string;
+  error?: string;
+}
+
+
+interface PageProps {
+  flash: FlashProps;
+}
+
+const page = usePage();
+const form = useForm({
+  firstName: '',
+  lastName: '',
+  email: '',
+  message: ''
 });
 
-const invalidInputForm = ref<boolean>(false);
 
-const handleSubmit = () => {
-  const { firstName, lastName, email, subject, message } = contactForm;
-  console.log(contactForm);
+const showSuccess = ref(false);
+const showError = ref(false);
+const successMessage = ref('');
+const errorMessage = ref('');
 
-  const mailToLink = `mailto:leomirandadev@gmail.com?subject=${subject}&body=Hello I am ${firstName} ${lastName}, my Email is ${email}. %0D%0A${message}`;
 
-  window.location.href = mailToLink;
+
+watch(() => page.props, (newProps) => {
+  const flash = (newProps as any)?.flash;
+  
+  if (flash?.success) {
+    showSuccess.value = true;
+    successMessage.value = flash.success;
+    setTimeout(() => { showSuccess.value = false; }, 5000);
+  }
+  
+  if (flash?.error) {
+    showError.value = true;
+    errorMessage.value = flash.error;
+    setTimeout(() => { showError.value = false; }, 5000);
+  }
+}, { immediate: true });
+
+const submit = () => {
+  form.post(route('contact.send'), {
+    preserveScroll: true,
+    onSuccess: () => form.reset(),
+  });
 };
 </script>
 
+
 <template>
-  <section
-    
-    class="w-[90%] 2xl:w-[75%] mx-auto py-24 sm:py-32 "
-  >
+  <section class="w-[90%] 2xl:w-[75%] mx-auto py-24 sm:py-32 ">
     <section class="grid grid-cols-1 md:grid-cols-2 gap-8">
       <div>
         <div class="mb-4">
@@ -87,7 +106,7 @@ const handleSubmit = () => {
               <div class="font-bold">Mail Us</div>
             </div>
 
-            <div>leomirandadev@gmail.com</div>
+            <div>shadcnpetproject@gmail.com</div>
           </div>
 
           <div>
@@ -108,96 +127,73 @@ const handleSubmit = () => {
       <Card class="bg-muted/60 dark:bg-card">
         <CardHeader class="text-primary text-2xl"> </CardHeader>
         <CardContent>
-          <form
-            @submit.prevent="handleSubmit"
-            class="grid gap-4"
-          >
+          <form @submit.prevent="submit" class="grid gap-4">
+
+            <!-- Поля формы с ошибками валидации -->
             <div class="flex flex-col md:flex-row gap-8">
               <div class="flex flex-col w-full gap-1.5">
                 <Label for="first-name">First Name</Label>
-                <Input
-                class="bg-background"                
-                  id="first-name"
-                  type="text"
-                  placeholder="Leopoldo"
-                  v-model="contactForm.firstName"
-                />
+                <Input class="bg-background" id="first-name" type="text" placeholder="Leroy" v-model="form.firstName"
+                  :class="{ 'border-red-500': form.errors.firstName }" />
+                <div v-if="form.errors.firstName" class="text-red-500 text-sm">
+                  {{ form.errors.firstName }}
+                </div>
               </div>
 
               <div class="flex flex-col w-full gap-1.5">
                 <Label for="last-name">Last Name</Label>
-                <Input
-                class="bg-background"
-                  id="last-name"
-                  type="text"
-                  placeholder="Miranda"
-                  v-model="contactForm.lastName"
-                />
+                <Input class="bg-background" id="last-name" type="text" placeholder="Jenkins" v-model="form.lastName"
+                  :class="{ 'border-red-500': form.errors.lastName }" />
+                <div v-if="form.errors.lastName" class="text-red-500 text-sm">
+                  {{ form.errors.lastName }}
+                </div>
               </div>
             </div>
 
             <div class="flex flex-col gap-1.5">
               <Label for="email">Email</Label>
-              <Input
-              class="bg-background"
-                id="email"
-                type="email"
-                placeholder="leomirandadev@gmail.com"
-                v-model="contactForm.email"
-              />
-            </div>
-
-            <div class="flex flex-col gap-1.5">
-              <Label for="subject">Subject</Label>
-
-              <Select  v-model="contactForm.subject">
-                <SelectTrigger class="!bg-background">
-                  <SelectValue  placeholder="Select a subject" />
-                </SelectTrigger>
-                <SelectContent class="border-border" >
-                  <SelectGroup >
-                    <SelectItem   value="Web Development">
-                      Web Development
-                    </SelectItem>
-                    <SelectItem value="Mobile Development">
-                      Mobile Development
-                    </SelectItem>
-                    <SelectItem value="Figma Design"> Figma Design </SelectItem>
-                    <SelectItem value="REST API "> REST API </SelectItem>
-                    <SelectItem value="FullStack Project">
-                      FullStack Project
-                    </SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+              <Input class="bg-background" id="email" type="email" placeholder="ihaveachicken@gmail.com"
+                v-model="form.email" :class="{ 'border-red-500': form.errors.email }" />
+              <div v-if="form.errors.email" class="text-red-500 text-sm">
+                {{ form.errors.email }}
+              </div>
             </div>
 
             <div class="flex flex-col gap-1.5">
               <Label for="message">Message</Label>
-              <Textarea
-              class="bg-background"
-                id="message"
-                placeholder="Your message..."
-                rows="5"
-                v-model="contactForm.message"
-              />
+              <Textarea class="bg-background" id="message" placeholder="Your message..." rows="5" v-model="form.message"
+                :class="{ 'border-red-500': form.errors.message }" />
+              <div v-if="form.errors.message" class="text-red-500 text-sm">
+                {{ form.errors.message }}
+              </div>
             </div>
 
-            <Alert
-              v-if="invalidInputForm"
-              variant="destructive"
-            >
-              <AlertCircle class="w-4 h-4" />
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>
-                There is an error in the form. Please check your input.
+            <!-- Success Alert -->
+            <Alert v-if="showSuccess" variant="default" class="flex gap-2 bg-transparent items-center">
+              <AlertCircle class="w-4 h-4 text-green-600" />
+              
+              <AlertDescription class="text-green-600">
+                {{ successMessage }}
               </AlertDescription>
             </Alert>
 
-            <Button class="mt-4">Send message</Button>
+            <!-- Error Alert -->
+            <Alert v-if="showError" variant="destructive" class="flex gap-2 bg-transparent items-center">
+              <AlertCircle class="w-4 h-4" />
+              
+              <AlertDescription>
+                {{ errorMessage }}
+              </AlertDescription>
+            </Alert>
+
+            <!-- Кнопка с индикатором загрузки -->
+            <Button :disabled="form.processing" class="mt-4 flex gap-2 items-center">
+              <span v-if="form.processing"
+                class="inline-block h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
+              <span>{{ form.processing ? 'Sending...' : 'Send message' }}</span>
+            </Button>
           </form>
         </CardContent>
-
         <CardFooter></CardFooter>
       </Card>
     </section>

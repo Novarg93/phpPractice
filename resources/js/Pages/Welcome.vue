@@ -32,8 +32,7 @@ import FAQ from '@/Components/FAQ.vue'
         <Testimonials/>
         <Team/>
         <Community/>
-        <Pricing/>
-        <Contact/>
+        <Pricing/>        
         <FAQ/>
     </DefaultLayout>    
 </template>
