@@ -9,6 +9,7 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\Support\Facades\FilamentView;         // 👈 добавь это
 use Filament\Support\Colors\Color;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
@@ -40,6 +41,8 @@ class AdminPanelProvider extends PanelProvider
             ->widgets([
                 AccountWidget::class,
                 FilamentInfoWidget::class,
+                
+                
             ])
             ->middleware([
                 EncryptCookies::class,
@@ -54,6 +57,19 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
-            ]);
+            ])
+            // тема (если используешь свою) — можно оставить
+            //->viteTheme('resources/css/filament/admin/theme.css')
+
+            // 👇 Правильный способ подключить Vite JS для панели в v4
+            ->renderHook(
+                'panels::body.end',
+                fn () => view('filament.hooks.realtime-scripts') // подключим наш blade
+            )
+            ->renderHook(
+     'panels::sidebar.nav.start',
+    fn () => view('filament.hooks.realtime-counters-topbar')
+);
+            
     }
 }

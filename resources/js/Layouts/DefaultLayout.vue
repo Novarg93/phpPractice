@@ -3,6 +3,7 @@ import { ref, onMounted, nextTick, watch, } from "vue";
 import { usePage } from '@inertiajs/vue3'
 import { Link } from '@inertiajs/vue3';
 import { useCartSummary } from '@/composables/useCartSummary'
+import { User as UserIcon } from "lucide-vue-next"
 import axios from 'axios'
 import {
     DropdownMenu,
@@ -41,7 +42,7 @@ const legalPages = usePage().props.legalPages as Array<{
     url: string
 }>
 
-
+const user = usePage().props.auth.user
 const isOpen = ref<boolean>(false);
 
 onMounted(() => loadSummary())
@@ -127,7 +128,7 @@ onMounted(() => loadSummary())
                 </ul>
             </nav>
 
-            <div class="hidden lg:flex pr-2 xl:pr-4 gap-8">
+            <div class="hidden lg:flex pr-2 xl:pr-4 gap-6">
                 <div class="flex items-center gap-4 ">
                     <span v-if="summary.total_qty">{{ formatPrice(summary.total_sum_cents) }}</span>
                     <a href="/cart" class="relative">
@@ -147,8 +148,17 @@ onMounted(() => loadSummary())
                 <div v-if="$page.props.auth.user" class="flex justify-between items-center">
                     <DropdownMenu>
                         <DropdownMenuTrigger>
-                            <img :src="$page.props.auth.user.avatar_url" alt="Avatar"
-                                class="h-8 w-8 rounded-full object-cover" />
+                            
+                            <template v-if="user?.avatar_url">
+                                <img :src="user.avatar_url" alt="User avatar"
+                                    class="h-8 w-8 rounded-full object-cover" @error="$event.target.src = ''" />
+                            </template>
+                            <template v-else>
+                                <div
+                                    class="h-8 w-8 items-center justify-center   flex ">
+                                    <UserIcon  />
+                                </div>
+                            </template>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent class="border border-border">
 

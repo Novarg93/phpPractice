@@ -23,7 +23,7 @@ class ContactController extends Controller
         'ip'         => $request->ip(),
         'user_agent' => (string) $request->userAgent(),
     ]);
-
+    event(new \App\Events\ContactMessageCreated($msg));
     try {
         // можно queue() вместо send()
         Mail::to('shadcnpetproject@gmail.com')->send(new ContactFormMail($data));

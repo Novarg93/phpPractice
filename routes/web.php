@@ -29,7 +29,7 @@ Route::get('/', fn() => Inertia::render('Welcome', [
 
 
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard'))->name('dashboard');
 
     // Profile
@@ -37,21 +37,23 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    // Checkout
-    Route::get('/checkout', [CheckoutController::class, 'index'])->name('checkout.index');
-    // создаёт Stripe Checkout Session
-    Route::post('/checkout/session', [CheckoutController::class, 'createSession'])->name('checkout.session');
-
-    // success/cancel после возврата со Stripe
-    Route::get('/checkout/success', [CheckoutController::class, 'success'])->name('checkout.success');
-    Route::get('/checkout/cancel',  [CheckoutController::class, 'cancel'])->name('checkout.cancel');
-
-    // Orders
+    // Orders (доступны без verified)
     Route::get('/profile/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/profile/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
 });
 
-// Cart (доступен гостям)
+/**
+ * Checkout: auth + verified
+ * — только здесь требуем подтверждение email
+ */
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/checkout', [CheckoutController::class, 'index'])->name('checkout.index');
+    Route::post('/checkout/session', [CheckoutController::class, 'createSession'])->name('checkout.session');
+    Route::get('/checkout/success', [CheckoutController::class, 'success'])->name('checkout.success');
+    Route::get('/checkout/cancel',  [CheckoutController::class, 'cancel'])->name('checkout.cancel');
+});
+
+// Cart (гостям доступен)
 Route::prefix('cart')->group(function () {
     Route::get('/',        [CartController::class, 'index'])->name('cart.index');
     Route::post('/add',    [CartController::class, 'add'])->name('cart.add');
@@ -61,22 +63,17 @@ Route::prefix('cart')->group(function () {
 });
 
 Route::get('/legal/{page:code}', [PageController::class, 'show'])->name('legal.show');
-
 Route::get('/catalog', fn() => Inertia::render('Catalog'))->name('catalog');
 
 Route::get('/contact', fn() => Inertia::render('Contact/Show'))->name('contact.show');
-
 Route::post('/contact/send', [ContactController::class, 'send'])
-    ->middleware('throttle:5,1') 
+    ->middleware('throttle:5,1')
     ->name('contact.send');
 
 Route::get('/games', [GameController::class, 'index'])->name('games.index');
 
-Route::post('/checkout/nickname', [CheckoutController::class, 'saveNickname'])
-    ->name('checkout.nickname');
-
-Route::post('/orders/{order}/nickname', [OrderController::class, 'saveNickname'])
-    ->name('orders.nickname');
+Route::post('/checkout/nickname', [CheckoutController::class, 'saveNickname'])->name('checkout.nickname');
+Route::post('/orders/{order}/nickname', [OrderController::class, 'saveNickname'])->name('orders.nickname');
 
 Route::scopeBindings()->group(function () {
     Route::get('/games/{game:slug}', [CatalogController::class, 'index'])->name('games.show');
@@ -84,7 +81,6 @@ Route::scopeBindings()->group(function () {
     Route::get('/games/{game:slug}/{category:slug}/{product:slug}', [ProductController::class, 'show'])
         ->scopeBindings()->name('products.show');
 });
-
 
 Route::get('/posts', [PostController::class, 'index'])->name('posts.index');
 Route::get('/posts/{post:slug}', [PostController::class, 'show'])->name('posts.show');
