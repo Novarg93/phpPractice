@@ -8,7 +8,7 @@ import { useProductOptions } from '@/composables/useProductOptions'
 import { usePricing } from '@/composables/usePricing'
 import type { Game, Category } from '@/types'
 import type { ProductWithGroups } from '@/types/product-options'
-import { ref, computed, onMounted  } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import RareItemBuilder from '@/Components/product/RareItemBuilder.vue'
 import type { SelectorGroup } from '@/types/product-options'
 
@@ -30,6 +30,29 @@ function byCodeOrTitle(code: string, rx: RegExp): SelectorGroup | undefined {
     ?? groups.value.find(g => rx.test((g.title || '').toLowerCase()))
 }
 
+const gaGroup = computed(() => byCodeOrTitle('ga', /\b(ga|greater)\b/))
+
+function clamp(n: number, min = 0, max = 3) {
+  const x = Number(n)
+  return Math.min(max, Math.max(min, Number.isFinite(x) ? x : 0))
+}
+
+const gaLimit = computed<number>(() => {
+  const g = gaGroup.value
+  if (!g) return 0
+  const raw = (selectionByGroup.value as any)[g.id]
+  const selectedId = Array.isArray(raw) ? raw[0] : raw
+  const opt = g.values?.find(v => v.id === selectedId)
+
+  // 1) meta.ga_count
+  const fromMeta = Number((opt as any)?.meta?.ga_count)
+  if (Number.isFinite(fromMeta)) return clamp(fromMeta)
+
+  // 2) из title вида "2GA" / "2 GA" / "GA x2"
+  const m = String(opt?.title ?? '').match(/(\d)/)
+  return clamp(m ? Number(m[1]) : 0)
+})
+
 const classGroup = computed(() => byCodeOrTitle('class', /class|класс/))
 const slotGroup = computed(() => byCodeOrTitle('slot', /slot|слот|предмет/))
 const affixGroup = computed(() => byCodeOrTitle('affix', /affix|аффикс|характеристик/))
@@ -46,7 +69,7 @@ const classModel = computed<number | null>({
   set: (v) => {
     const g = classGroup.value
     if (!g) return
-    ;(selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
+      ; (selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
   },
 })
 
@@ -77,7 +100,7 @@ const slotModel = computed<number | null>({
   set: (v) => {
     const g = slotGroup.value
     if (!g) return
-    ;(selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
+      ; (selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
   },
 })
 
@@ -96,7 +119,17 @@ const affixModel = computed<number[]>({
     const g = affixGroup.value
     if (!g) return
     const next = Array.isArray(v) ? v : (v != null ? [Number(v)] : [])
-    ;(selectionByGroup.value as any)[g.id] = next
+      ; (selectionByGroup.value as any)[g.id] = next
+  },
+})
+
+
+const affixGaModel = computed<number[]>({
+  get: () => (selectionByGroup.value as any)._affix_ga_ids ?? [],
+  set: (ids) => {
+    (selectionByGroup.value as any)._affix_ga_ids = Array.isArray(ids)
+      ? Array.from(new Set(ids.map(Number))).slice(0, 3)
+      : []
   },
 })
 
@@ -208,6 +241,7 @@ async function addToCart() {
 
     // 3B) иначе — обычное добавление текущего продукта (как было)
     const payload = buildAddToCartPayload()
+    payload.affix_ga_ids = affixGaModel.value ?? []
     const { data } = await axios.post('/cart/add', payload)
     if (data && data.summary) cartSummary.value = data.summary
     else await loadSummary()
@@ -254,11 +288,18 @@ async function addToCart() {
 
 
           <!-- RARE BUILDER -->
-          <div v-if="classGroup && slotGroup && affixGroup" class="mt-4 border rounded-lg p-3">
-            <RareItemBuilder :class-group="classGroup" :slot-group="slotGroup" :affix-group="affixGroup"
-              :currency="'USD'" v-model:class-id="classModel" v-model:slot-id="slotModel"
-              v-model:affix-ids="affixModel" />
-          </div>
+          <RareItemBuilder
+            v-if="classGroup && slotGroup && affixGroup"
+            :class-group="classGroup"
+            :slot-group="slotGroup"
+            :affix-group="affixGroup"
+            :currency="'USD'"
+            :ga-limit="gaLimit"   
+            v-model:class-id="classModel"
+            v-model:slot-id="slotModel"
+            v-model:affix-ids="affixModel"
+            v-model:affix-ga-ids="affixGaModel"
+          />
 
           <!-- Остальные группы (кроме class/slot/affix) -->
 

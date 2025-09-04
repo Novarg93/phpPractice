@@ -49,7 +49,12 @@ function retryPay(orderId: number) {
                 <div v-if="it.options?.length" class="text-sm text-muted-foreground">
                   <ul class="list-disc pl-5 space-y-0.5">
                     <li v-for="opt in it.options" :key="opt.id">
+                      <span v-if="opt.is_ga"
+                        class="text-[10px] mr-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
+                        GA
+                      </span>
                       <span class="font-medium">{{ opt.title }}</span>
+                      
                       <span class="ml-1">
                         (
                         <template v-if="opt.calc_mode === 'percent'">
@@ -57,7 +62,7 @@ function retryPay(orderId: number) {
                         </template>
                         <template v-else>
                           {{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(opt.value_cents ?? 0) }} {{
-                          opt.scope }}
+                            opt.scope }}
                         </template>
                         )
                       </span>

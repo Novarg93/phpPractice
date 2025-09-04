@@ -37,6 +37,7 @@ type ItemOption = {
     scope: 'unit' | 'total'
     value_cents?: number | null
     value_percent?: number | null
+     is_ga?: boolean
 }
 
 const props = defineProps<{
@@ -111,7 +112,12 @@ async function removeItem(item: CartItem) {
                         <div v-if="item.options && item.options.length" class="text-sm text-muted-foreground">
                             <ul class="list-disc pl-5 space-y-0.5">
                                 <li v-for="opt in item.options" :key="opt.id">
+                                    <span v-if="opt.is_ga"
+                        class="text-[10px] mr-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
+                        GA
+                      </span>
                                     <span class="font-medium">{{ opt.title }}</span>
+                                    
                                     <span class="ml-1">
                                         (
                                         <template v-if="opt.calc_mode === 'percent'">

@@ -54,6 +54,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/checkout/cancel',  [CheckoutController::class, 'cancel'])->name('checkout.cancel');
     Route::post('/profile/orders/{order}/pay', [OrderController::class, 'pay'])
     ->name('orders.pay');
+    Route::post('/checkout/test-pending', [CheckoutController::class, 'createTestPending'])
+    ->name('checkout.testPending');
 });
 
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])->name('stripe.webhook');

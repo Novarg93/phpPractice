@@ -56,7 +56,7 @@ class CartController extends Controller
             return Inertia::render('Cart/Index', [
                 'items' => collect($items)->map(function ($i) {
                     $p = \App\Models\Product::with('optionGroups')->find($i['product_id']);
-
+                    $guestGaSet = collect($i['affix_ga_ids'] ?? [])->map(fn($v) => (int)$v)->unique();
                     $hasQtySlider = (bool) ($p?->optionGroups
                         ->contains('type', \App\Models\OptionGroup::TYPE_SLIDER) ?? false);
 
@@ -83,7 +83,7 @@ class CartController extends Controller
                                 + (int)($v->position ?? 0);
                         });
 
-                    $optionLabels = $vals->map(function ($v) {
+                    $optionLabels = $vals->map(function ($v) use ($guestGaSet) {
                         $g = $v->group;
 
                         // режим значения
@@ -119,6 +119,7 @@ class CartController extends Controller
                             'scope'         => $isUnit ? 'unit' : 'total',
                             'value_cents'   => $valueCents,
                             'value_percent' => $valuePercent,
+                            'is_ga'         => $guestGaSet->contains($v->id),
                         ];
                     })->values()->all();
 
@@ -209,6 +210,7 @@ class CartController extends Controller
                             'scope'         => $isUnit ? 'unit' : 'total',
                             'value_cents'   => $valueCents,
                             'value_percent' => $valuePercent,
+                            'is_ga'         => (bool) $o->is_ga
                         ];
                     })
                     ->values()
@@ -241,22 +243,73 @@ class CartController extends Controller
     public function add(Request $request)
     {
         $data = $request->validate([
-            'product_id'         => ['required', 'integer', 'exists:products,id'],
-            'qty'                => ['nullable', 'integer', 'min:1'],
-            'option_value_ids'   => ['array'],
-            'option_value_ids.*' => ['integer', 'exists:option_values,id'],
-            'range_options'      => ['array'],
+            'product_id'                  => ['required', 'integer', 'exists:products,id'],
+            'qty'                         => ['nullable', 'integer', 'min:1'],
+            'option_value_ids'            => ['array'],
+            'option_value_ids.*'          => ['integer', 'exists:option_values,id'],
+            'range_options'               => ['array'],
             'range_options.*.option_group_id' => ['required', 'integer', 'exists:option_groups,id'],
             'range_options.*.selected_min'    => ['required', 'integer'],
             'range_options.*.selected_max'    => ['required', 'integer'],
+            'affix_ga_ids'                => ['array'],
+            'affix_ga_ids.*'              => ['integer', 'exists:option_values,id'],
         ]);
 
         $optionIds = $this->normalizeOptionIds($data['option_value_ids'] ?? []);
         $this->pricing->validateSelection($data['product_id'], $optionIds);
 
         $rangeList = $this->pricing->validateRangeSelections($data['product_id'], $data['range_options'] ?? []);
-        $qty = $this->pricing->validateAndResolveQty($data['product_id'], $data['qty'] ?? null);
+        $qty       = $this->pricing->validateAndResolveQty($data['product_id'], $data['qty'] ?? null);
 
+        $affixGaIds = collect($data['affix_ga_ids'] ?? [])
+            ->map(fn($v) => (int)$v)
+            ->unique()
+            ->values();
+
+        // --- PRE-VALIDATE GA
+        $product = $this->pricing->productWithGroups($data['product_id']);
+
+        // Найдём affix-группу и проверим, что все GA входят в выбранные аффиксы
+        $affixGroup = optional($product->optionGroups)->firstWhere(function ($g) {
+            $t = mb_strtolower((string)($g->title ?? ''));
+            $c = mb_strtolower((string)($g->code ?? ''));
+            return $c === 'affix' || str_contains($t, 'affix') || str_contains($t, 'аффикс') || str_contains($t, 'характеристик');
+        });
+
+        $allowedAffixIds = collect($affixGroup?->values ?? [])->pluck('id')->map(fn($v) => (int)$v)->all();
+        $invalidGa = $affixGaIds->reject(fn($vid) => in_array($vid, $optionIds, true) && in_array($vid, $allowedAffixIds, true));
+        abort_if($invalidGa->isNotEmpty(), 422, 'Invalid GA selection.');
+
+        // Жёстко контролируем лимит по GA single-selector (если он есть)
+        $gaGroup = optional($product->optionGroups)->firstWhere(
+            fn($g) =>
+            mb_strtolower((string)($g->code ?? '')) === 'ga'
+                || (bool)preg_match('/\b(ga|greater)\b/i', (string)($g->title ?? ''))
+        );
+
+        if ($gaGroup) {
+            $selectedGaValueId = collect($gaGroup->values ?? [])->pluck('id')->intersect($optionIds)->first();
+            if ($selectedGaValueId) {
+                $gaValue = collect($gaGroup->values)->firstWhere('id', $selectedGaValueId);
+
+                // 1) meta.ga_count
+                $limit = null;
+                $raw = $gaValue->meta['ga_count'] ?? null;
+                if (is_numeric($raw)) {
+                    $limit = (int)$raw;
+                } else {
+                    // 2) fallback: цифра в title (например "2 GA")
+                    if (preg_match('/(\d+)/', (string)($gaValue->title ?? ''), $m)) {
+                        $limit = (int)$m[1];
+                    }
+                }
+                $limit = max(0, min(3, (int)($limit ?? 0)));
+                abort_if($affixGaIds->count() > $limit, 422, 'GA count exceeds selected limit.');
+            }
+        }
+        // --- END PRE-VALIDATE GA
+
+        // Считаем цену
         $pricing = $this->pricing->computeUnitAndTotalCents(
             $data['product_id'],
             $optionIds,
@@ -264,63 +317,68 @@ class CartController extends Controller
             $qty
         );
 
+        // Гость: складываем в сессию
         if ($this->isGuest($request)) {
             $items = $this->getGuestCart($request);
-
             $items[] = [
-                'id' => (string) \Illuminate\Support\Str::uuid(),
+                'id'                => (string) \Illuminate\Support\Str::uuid(),
                 'product_id'        => $data['product_id'],
                 'qty'               => $qty,
                 'unit_price_cents'  => $pricing['unit'],
                 'line_total_cents'  => $pricing['line_total'],
                 'option_value_ids'  => $optionIds,
                 'range_options'     => $rangeList,
+                'affix_ga_ids'      => $affixGaIds->all(),
             ];
-
             $this->saveGuestCart($request, $items);
             return response()->json(['ok' => true, 'summary' => $this->summaryPayload($request)]);
         }
 
-        $cart = $this->getUserCart($request);
+        // Авторизованный: всё под транзакцией, но без "return" из неё
+        DB::transaction(function () use ($request, $data, $pricing, $optionIds, $rangeList, $affixGaIds, $product) {
+            $cart = $this->getUserCart($request);
 
-        $new = $cart->items()->create([
-            'product_id'        => $data['product_id'],
-            'qty'               => $qty,
-            'unit_price_cents'  => $pricing['unit'],
-            'line_total_cents'  => $pricing['line_total'],
-        ]);
-
-        foreach ($optionIds as $vid) {
-            $new->options()->create(['option_value_id' => $vid]);
-        }
-
-        $productLoaded = $this->pricing->productWithGroups($data['product_id']);
-        foreach ($rangeList as $row) {
-            $deltaForOne = $this->pricing->computeRangePerUnitDelta($productLoaded, [$row]);
-
-            $new->options()->create([
-                'option_value_id'   => null,
-                'option_group_id'   => $row['option_group_id'],
-                'selected_min'      => $row['selected_min'],
-                'selected_max'      => $row['selected_max'],
-                'price_delta_cents' => $deltaForOne,
-                'payload_json'      => [
-                    'pricing_mode'          => $productLoaded->optionGroups
-                        ->firstWhere('id', $row['option_group_id'])->pricing_mode ?? null,
-                    'tier_combine_strategy' => $productLoaded->optionGroups
-                        ->firstWhere('id', $row['option_group_id'])->tier_combine_strategy ?? null,
-                    'tiers'                 => is_array($productLoaded->optionGroups
-                        ->firstWhere('id', $row['option_group_id'])->tiers_json)
-                        ? $productLoaded->optionGroups
-                        ->firstWhere('id', $row['option_group_id'])->tiers_json
-                        : (json_decode((string)($productLoaded->optionGroups
-                            ->firstWhere('id', $row['option_group_id'])->tiers_json), true) ?: []),
-                ],
+            $new = $cart->items()->create([
+                'product_id'       => $data['product_id'],
+                'qty'              => $qty = ($pricing['qty'] ?? null) ?: ($data['qty'] ?? 1), // но лучше: просто $qty извне
+                'unit_price_cents' => $pricing['unit'],
+                'line_total_cents' => $pricing['line_total'],
             ]);
-        }
+
+            // Лучше явно: $new->qty = $qty; $new->save();
+            $new->update(['qty' => $qty]); // чтобы точно положить корректное значение
+
+            foreach ($optionIds as $vid) {
+                $new->options()->create([
+                    'option_value_id' => $vid,
+                    'is_ga'           => $affixGaIds->contains((int)$vid),
+                ]);
+            }
+
+            foreach ($rangeList as $row) {
+                $deltaForOne = $this->pricing->computeRangePerUnitDelta($product, [$row]);
+                $group = $product->optionGroups->firstWhere('id', $row['option_group_id']);
+
+                $new->options()->create([
+                    'option_value_id'   => null,
+                    'option_group_id'   => $row['option_group_id'],
+                    'selected_min'      => $row['selected_min'],
+                    'selected_max'      => $row['selected_max'],
+                    'price_delta_cents' => $deltaForOne,
+                    'payload_json'      => [
+                        'pricing_mode'          => $group->pricing_mode ?? null,
+                        'tier_combine_strategy' => $group->tier_combine_strategy ?? null,
+                        'tiers'                 => is_array($group->tiers_json)
+                            ? $group->tiers_json
+                            : (json_decode((string)$group->tiers_json, true) ?: []),
+                    ],
+                ]);
+            }
+        });
 
         return response()->json(['ok' => true, 'summary' => $this->summaryPayload($request)]);
     }
+
 
     public function update(Request $request)
     {
@@ -452,10 +510,13 @@ class CartController extends Controller
                     'line_total_cents'  => $pricing['line_total'],
                 ]);
 
+                $gaSet = collect($gi['affix_ga_ids'] ?? [])->map(fn($v) => (int)$v)->unique();
                 foreach ($optionValueIds as $vid) {
-                    $item->options()->create(['option_value_id' => $vid]);
+                    $item->options()->create([
+                        'option_value_id' => $vid,
+                        'is_ga'           => $gaSet->contains((int)$vid),
+                    ]);
                 }
-
                 $productLoaded = $this->pricing->productWithGroups($productId);
                 foreach ($rangeOptions as $row) {
                     $deltaForOne = $this->pricing->computeRangePerUnitDelta($productLoaded, [$row]);

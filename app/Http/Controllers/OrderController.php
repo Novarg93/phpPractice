@@ -135,6 +135,7 @@ class OrderController extends Controller
                                 'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
                                 'value_cents'   => $valueCents,
                                 'value_percent' => $valuePercent,
+                                'is_ga'         => (bool) $o->is_ga,   // ⬅️ добавили
                             ];
                         })
                         ->values();
@@ -172,12 +173,29 @@ class OrderController extends Controller
     public function pay(Request $request, Order $order)
     {
         $this->authorize('view', $order);
-
         abort_unless($order->status === \App\Models\Order::STATUS_PENDING, 422, 'Order is not pending.');
+
+        // нужно, чтобы были optionValue и is_ga
+        $order->load('items.options.optionValue');
 
         $lineItems = [];
         foreach ($order->items as $it) {
-            $name = $it->product_name . ' x' . $it->qty;
+            $optTitles = $it->options
+                ->whereNotNull('option_value_id')
+                ->map(function ($o) {
+                    $t = $o->optionValue?->title;
+                    return $t ? $t . ($o->is_ga ? ' [GA]' : '') : null;
+                })
+                ->filter()
+                ->values()
+                ->all();
+
+            $parts = [];
+            if (count($optTitles)) $parts[] = implode(', ', $optTitles);
+
+            $nameBase = $it->product_name . (count($parts) ? ' (' . implode(' | ', $parts) . ')' : '');
+            $name     = $nameBase . ' x' . $it->qty;
+
             $lineItems[] = [
                 'price_data' => [
                     'currency' => strtolower($order->currency ?? 'USD'),

@@ -16,10 +16,12 @@ class OrderItemOption extends Model
         'selected_min',
         'selected_max',
         'payload_json',
+        'is_ga', 
     ];
 
     protected $casts = [
         'payload_json' => 'array',
+        'is_ga' => 'bool',
     ];
     public function optionValue(): BelongsTo
     {

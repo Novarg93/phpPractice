@@ -83,6 +83,7 @@ class CheckoutController extends Controller
                             'scope'         => ($g->multiply_by_qty ?? false) ? 'unit' : 'total',
                             'value_cents'   => $valueCents,
                             'value_percent' => $valuePercent,
+                            'is_ga'         => (bool) $o->is_ga,
                         ];
                     })
                     ->values()
@@ -141,7 +142,112 @@ class CheckoutController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    public function createTestPending(Request $request)
+    {
+        $user = $request->user();
 
+        // берём текущую корзину
+        $cart = \App\Models\Cart::firstOrCreate(['user_id' => $user->id])
+            ->load(['items.product', 'items.options.group', 'items.options.optionValue.group']);
+
+        abort_if($cart->items->isEmpty(), 422, 'Cart is empty');
+
+        // считаем суммы
+        $subtotal = $cart->items->sum('line_total_cents');
+        $shipping = 0;
+        $tax      = 0;
+        $total    = $subtotal + $shipping + $tax;
+
+        // создаём pending-заказ + снапшоты позиций
+        $order = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $user, $cart, $subtotal, $shipping, $tax, $total) {
+            $order = \App\Models\Order::create([
+                'user_id'        => $user->id,
+                'status'         => \App\Models\Order::STATUS_PENDING,
+                'currency'       => 'USD',
+                'subtotal_cents' => $subtotal,
+                'shipping_cents' => $shipping,
+                'tax_cents'      => $tax,
+                'total_cents'    => $total,
+                'payment_method' => 'test', // помечаем, что это тестовая кнопка
+                'payment_id'     => null,
+                'placed_at'      => null,
+                'game_payload'   => [
+                    'nickname' => $request->session()->get('checkout.nickname'),
+                ],
+                'checkout_session_id' => null,
+            ]);
+
+            foreach ($cart->items as $ci) {
+                $oi = $order->items()->create([
+                    'product_id'        => $ci->product_id,
+                    'product_name'      => $ci->product->name,
+                    'unit_price_cents'  => $ci->unit_price_cents,
+                    'qty'               => $ci->qty,
+                    'line_total_cents'  => $ci->line_total_cents,
+
+                ]);
+
+                foreach ($ci->options as $opt) {
+                    // value-опция
+                    if (!is_null($opt->option_value_id)) {
+                        $ov = \App\Models\OptionValue::with('group')->find($opt->option_value_id);
+                        $g  = $ov?->group;
+
+                        $delta = 0;
+                        if ($g) {
+                            if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
+                                if (($g->pricing_mode ?? 'absolute') === 'percent') {
+                                    // процент можно при желании писать в payload_json
+                                } else {
+                                    $delta = (int)($ov->delta_cents ?? $ov->price_delta_cents ?? 0);
+                                }
+                            } elseif (in_array($g->type ?? null, [
+                                \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
+                                \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
+                            ], true)) {
+                                // проценты — можно в payload_json
+                            } else {
+                                $delta = (int)($ov->price_delta_cents ?? 0);
+                            }
+                        }
+
+                        $oi->options()->create([
+                            'option_value_id'   => $opt->option_value_id,
+                            'title'             => $ov?->title ?? 'Option',
+                            'price_delta_cents' => $delta,
+                            'is_ga'             => (bool) $opt->is_ga,
+                        ]);
+                        continue;
+                    }
+
+                    // range-опция
+                    if (!is_null($opt->option_group_id)) {
+                        $oi->options()->create([
+                            'option_value_id'   => null,
+                            'option_group_id'   => $opt->option_group_id,
+                            'title'             => $opt->group?->title ?? 'Range',
+                            'price_delta_cents' => (int)($opt->price_delta_cents ?? 0),
+                            'selected_min'      => (int)($opt->selected_min ?? 0),
+                            'selected_max'      => (int)($opt->selected_max ?? 0),
+                            'payload_json'      => $opt->payload_json ?? null,
+                        ]);
+                        continue;
+                    }
+                }
+            }
+
+            return $order;
+        });
+
+        // чистим корзину сразу (как и при обычном checkout)
+        \App\Services\Cart\CartTools::clearUserCart($user->id);
+
+        return response()->json([
+            'ok'       => true,
+            'order_id' => $order->id,
+            'redirect' => route('orders.show', $order),
+        ]);
+    }
     /**
      * Создаёт Stripe Checkout Session и возвращает его id/url
      */
@@ -195,7 +301,7 @@ class CheckoutController extends Controller
                         if ($g) {
                             if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
                                 if (($g->pricing_mode ?? 'absolute') === 'percent') {
-                                    // проценты можно сохранить в payload_json при желании
+                                    // процент можно при желании сохранить в payload_json
                                 } else {
                                     $delta = (int)($ov->delta_cents ?? $ov->price_delta_cents ?? 0);
                                 }
@@ -213,6 +319,7 @@ class CheckoutController extends Controller
                             'option_value_id'   => $opt->option_value_id,
                             'title'             => $ov?->title ?? 'Option',
                             'price_delta_cents' => $delta,
+                            'is_ga'             => (bool) $opt->is_ga,   // ⬅️ добавили
                         ]);
                         continue;
                     }
@@ -246,7 +353,10 @@ class CheckoutController extends Controller
         foreach ($cart->items as $ci) {
             $optTitles = $ci->options
                 ->filter(fn($o) => !is_null($o->option_value_id))
-                ->map(fn($o) => $ovMap->get($o->option_value_id)?->title)
+                ->map(function ($o) use ($ovMap) {
+                    $t = $ovMap->get($o->option_value_id)?->title;
+                    return $t ? $t . ($o->is_ga ? ' [GA]' : '') : null;
+                })
                 ->filter()
                 ->values()
                 ->all();
@@ -267,8 +377,12 @@ class CheckoutController extends Controller
             $lineItems[] = [
                 'price_data' => [
                     'currency' => 'usd',
-                    'product_data' => ['name' => $name],
-                    'unit_amount' => $ci->line_total_cents,  // вся сумма по строке
+                    'product_data' => [
+                        'name' => $name,
+                        // по желанию можно продублировать разметку сюда:
+                        // 'description' => implode(' | ', $parts),
+                    ],
+                    'unit_amount' => $ci->line_total_cents,
                 ],
                 'quantity' => 1,
             ];

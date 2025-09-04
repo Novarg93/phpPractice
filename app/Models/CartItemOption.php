@@ -15,10 +15,12 @@ class CartItemOption extends Model
         'selected_max',
         'price_delta_cents',
         'payload_json',
+         'is_ga', //
     ];
 
     protected $casts = [
         'payload_json' => 'array',
+          'is_ga' => 'bool',
     ];
 
     public function item(): BelongsTo { return $this->belongsTo(CartItem::class); }
