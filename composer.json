@@ -40,6 +40,10 @@
         }
     },
     "scripts": {
+        "dev:queue": "php artisan queue:work --tries=3",
+    "dev:schedule": "php artisan schedule:work",
+    "dev:webhook": "stripe listen --forward-to http://127.0.0.1:8000/stripe/webhook",
+
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi",
