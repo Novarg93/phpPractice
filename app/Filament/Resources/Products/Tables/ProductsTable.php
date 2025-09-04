@@ -25,22 +25,16 @@ class ProductsTable
                     ->toggleable(),
                 TextColumn::make('name')
                     ->searchable(),
-                TextColumn::make('slug')
-                    ->searchable(),
-                TextColumn::make('sku')
-                    ->label('SKU')
-                    ->searchable(),
+                
+                
                 TextColumn::make('price_cents')
                     ->numeric()
                     ->sortable(),
                 IconColumn::make('is_active')
                     ->boolean(),
-                IconColumn::make('track_inventory')
-                    ->boolean(),
-                TextColumn::make('stock')
-                    ->numeric()
-                    ->sortable(),
-                ImageColumn::make('image'),
+                
+                
+                
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()

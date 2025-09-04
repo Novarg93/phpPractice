@@ -6,6 +6,11 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\Order;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\DB;
+use Stripe\StripeClient;
+use Illuminate\Support\Facades\Auth;
+
+
 
 class OrderController extends Controller
 {
@@ -13,7 +18,7 @@ class OrderController extends Controller
     public function index(Request $request)
     {
         $orders = Order::where('user_id', $request->user()->id)
-            ->latest('placed_at')
+            ->orderByDesc(DB::raw('COALESCE(placed_at, created_at)')) // 👈 pending попадут наверх
             ->withCount('items')
             ->paginate(20);
 
@@ -84,19 +89,19 @@ class OrderController extends Controller
                     // value-опции (radio/checkbox): как в корзине/чекауте
                     $valueOptions = $i->options
                         ->filter(fn($o) => $o->option_value_id && $o->optionValue && $o->optionValue->group)
-                         ->sortBy(function ($o) {
-                        $v = $o->optionValue;
-                        $g = $v->group;
-                        $priority = match ($g->code ?? null) {
-                            'class' => 0,
-                            'slot'  => 1,
-                            'affix' => 2,
-                            default => 100,
-                        };
-                        return $priority * 1_000_000
-                            + (int)($g->position ?? 0) * 1_000
-                            + (int)($v->position ?? 0);
-                    })
+                        ->sortBy(function ($o) {
+                            $v = $o->optionValue;
+                            $g = $v->group;
+                            $priority = match ($g->code ?? null) {
+                                'class' => 0,
+                                'slot'  => 1,
+                                'affix' => 2,
+                                default => 100,
+                            };
+                            return $priority * 1_000_000
+                                + (int)($g->position ?? 0) * 1_000
+                                + (int)($v->position ?? 0);
+                        })
                         ->map(function ($o) {
                             $v = $o->optionValue;
                             $g = $v->group;
@@ -161,5 +166,48 @@ class OrderController extends Controller
                 })->values(),
             ],
         ]);
+    }
+
+
+    public function pay(Request $request, Order $order)
+    {
+        $this->authorize('view', $order);
+
+        abort_unless($order->status === \App\Models\Order::STATUS_PENDING, 422, 'Order is not pending.');
+
+        $lineItems = [];
+        foreach ($order->items as $it) {
+            $name = $it->product_name . ' x' . $it->qty;
+            $lineItems[] = [
+                'price_data' => [
+                    'currency' => strtolower($order->currency ?? 'USD'),
+                    'product_data' => ['name' => $name],
+                    'unit_amount'  => (int) $it->line_total_cents,
+                ],
+                'quantity' => 1,
+            ];
+        }
+
+        $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
+
+        $session = $stripe->checkout->sessions->create([
+            'mode' => 'payment',
+            'payment_method_types' => ['card'],
+            'line_items' => $lineItems,
+            'success_url' => route('checkout.success') . '?session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url'  => route('checkout.cancel'),
+            'metadata'    => [
+                'user_id'  => (string) $order->user_id,
+                'order_id' => (string) $order->id,
+            ],
+        ]);
+
+        $order->update([
+            'checkout_session_id' => $session->id,
+            'payment_id'          => $session->id,
+        ]);
+
+        // Laravel сделает 302 → Stripe Checkout
+        return Inertia::location($session->url);
     }
 }

@@ -9,6 +9,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 
 class User extends Authenticatable implements MustVerifyEmail
@@ -36,6 +37,11 @@ class User extends Authenticatable implements MustVerifyEmail
         'avatar',   // <- в БД ХРАНИМ ТОЛЬКО ПУТЬ, например "avatars/xxx.jpg"
         'role',
     ];
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
 
     // Аккуратный URL для фронта (не ломает FileUpload)
     protected $appends = ['avatar_url'];

@@ -26,12 +26,23 @@ final class UsersTable
         return [
             TC\TextColumn::make('id')->label('ID')->sortable(),
             TC\ImageColumn::make('avatar')->label('Avatar')->disk('public')->circular()->imageWidth(36)->imageHeight(36),
-            TC\TextColumn::make('email')->label('Email')->searchable()->sortable(),
+            TC\TextColumn::make('email')->label('Email')->searchable()->sortable()->alignCenter(),
             TC\TextColumn::make('role')->label('Role')->badge()->colors([
                 'success' => 'admin',
                 'warning' => 'support',
                 'gray'    => 'user',
             ])->sortable(),
+
+            // 👇 Новые столбцы
+            TC\TextColumn::make('paid_orders_count')
+                ->label('Orders')
+                ->sortable()
+                ->alignCenter()
+                ->badge(),
+
+            TC\TextColumn::make('paid_orders_total')
+                ->money('USD', divideBy: 100)
+                ->alignCenter()
         ];
     }
 }

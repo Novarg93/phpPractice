@@ -13,6 +13,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class UserResource extends Resource
 {
@@ -40,5 +41,16 @@ class UserResource extends Resource
             'create' => CreateUser::route('/create'),
             'edit'   => EditUser::route('/{record}/edit'),
         ];
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->withCount([
+                'orders as paid_orders_count' => fn($q) => $q->where('status', 'paid'),
+            ])
+            ->withSum([
+                'orders as paid_orders_total' => fn($q) => $q->where('status', 'paid'),
+            ], 'total_cents');
     }
 }

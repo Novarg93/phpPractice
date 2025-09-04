@@ -1,16 +1,17 @@
 <script setup lang="ts">
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 import { computed } from 'vue'
-import { Link } from '@inertiajs/vue3';
+import { Link } from '@inertiajs/vue3'
+import OrderStatusBadge from '@/Components/OrderStatusBadge.vue'
+import Pagination from '@/Components/Pagination.vue'
+
 
 type OrderDto = { id:number; status:string; placed_at:string|null; total_cents:number; items_count:number }
+type Paged<T> = { data: T[]; links: { url:string|null; label:string; active:boolean }[]; meta?: any }
 
-const props = defineProps<{
-  orders: { data: OrderDto[]; links?: any; meta?: any } // ← пагинатор
-}>()
 
+const props = defineProps<{ orders: { data: OrderDto[]; links?: any; meta?: any } }>()
 const list = computed(() => props.orders?.data ?? [])
-
 function formatPrice(cents:number) {
   return new Intl.NumberFormat('en-US', { style:'currency', currency:'USD' }).format(cents/100)
 }
@@ -24,22 +25,21 @@ function formatPrice(cents:number) {
       <div v-if="list.length" class="space-y-3">
         <Link v-for="o in list" :key="o.id" class="block border border-border rounded-lg p-4 hover:bg-accent"
            :href="route('orders.show', o.id)">
-          <div class="flex justify-between">
+          <div class="flex justify-between items-center">
             <div>
               <div class="font-medium">Order #{{ o.id }}</div>
               <div class="text-sm text-muted-foreground">{{ o.placed_at || '—' }} · {{ o.items_count }} items</div>
             </div>
-            <div class="text-right">
+            <div class="text-right space-y-1">
               <div class="font-semibold">{{ formatPrice(o.total_cents) }}</div>
-              <div class="text-xs uppercase tracking-wide text-muted-foreground">{{ o.status }}</div>
+              <OrderStatusBadge :status="o.status" />
             </div>
           </div>
         </Link>
       </div>
 
       <div v-else class="text-muted-foreground">You have no orders yet.</div>
-
-      <!-- при желании: пагинация через props.orders.links -->
+       <Pagination v-if="props.orders?.links?.length" :links="props.orders.links" />
     </section>
   </DefaultLayout>
 </template>

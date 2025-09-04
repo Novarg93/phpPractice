@@ -10,7 +10,8 @@ use App\Http\Controllers\{
     CartController,
     PageController,
     PostController,
-    ContactController
+    ContactController,
+    StripeWebhookController
 };
 use Illuminate\Foundation\Application;
 
@@ -51,7 +52,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/checkout/session', [CheckoutController::class, 'createSession'])->name('checkout.session');
     Route::get('/checkout/success', [CheckoutController::class, 'success'])->name('checkout.success');
     Route::get('/checkout/cancel',  [CheckoutController::class, 'cancel'])->name('checkout.cancel');
+    Route::post('/profile/orders/{order}/pay', [OrderController::class, 'pay'])
+    ->name('orders.pay');
 });
+
+Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])->name('stripe.webhook');
 
 // Cart (гостям доступен)
 Route::prefix('cart')->group(function () {

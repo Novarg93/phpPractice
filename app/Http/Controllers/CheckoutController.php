@@ -7,7 +7,9 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use App\Models\OptionGroup;
-use Stripe\StripeClient;
+use App\Services\Cart\CartTools;
+
+
 use App\Models\{Cart, OptionValue, Order, OrderItem};
 
 class CheckoutController extends Controller
@@ -149,8 +151,96 @@ class CheckoutController extends Controller
         $cart = Cart::firstOrCreate(['user_id' => $user->id])->load(['items.product', 'items.options']);
         abort_if($cart->items->isEmpty(), 422, 'Cart is empty');
 
+        // 1) Считаем суммы
+        $subtotal = $cart->items->sum('line_total_cents');
+        $shipping = 0;
+        $tax      = 0;
+        $total    = $subtotal + $shipping + $tax;
+
+        // 2) Создаём заказ (PENDING) и снапшоты позиций ДО Stripe
+        $order = DB::transaction(function () use ($request, $user, $cart, $subtotal, $shipping, $tax, $total) {
+            $order = Order::create([
+                'user_id'        => $user->id,
+                'status'         => Order::STATUS_PENDING, // явное указание
+                'currency'       => 'USD',
+                'subtotal_cents' => $subtotal,
+                'shipping_cents' => $shipping,
+                'tax_cents'      => $tax,
+                'total_cents'    => $total,
+                'payment_method' => 'stripe',
+                'payment_id'     => null,
+                'placed_at'      => null,
+                'game_payload'   => [
+                    'nickname' => $request->session()->get('checkout.nickname'),
+                ],
+            ]);
+
+            // снапшоты айтемов и опций (то, что у тебя было в success())
+            foreach ($cart->items as $ci) {
+                $oi = $order->items()->create([
+                    'product_id'        => $ci->product_id,
+                    'product_name'      => $ci->product->name,
+                    'unit_price_cents'  => $ci->unit_price_cents,
+                    'qty'               => $ci->qty,
+                    'line_total_cents'  => $ci->line_total_cents,
+                ]);
+
+                foreach ($ci->options as $opt) {
+                    // 1) value-опция
+                    if ($opt->option_value_id !== null) {
+                        $ov = \App\Models\OptionValue::with('group')->find($opt->option_value_id);
+                        $g  = $ov?->group;
+
+                        $delta = 0;
+                        if ($g) {
+                            if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
+                                if (($g->pricing_mode ?? 'absolute') === 'percent') {
+                                    // проценты можно сохранить в payload_json при желании
+                                } else {
+                                    $delta = (int)($ov->delta_cents ?? $ov->price_delta_cents ?? 0);
+                                }
+                            } elseif (in_array($g->type ?? null, [
+                                \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
+                                \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
+                            ], true)) {
+                                // проценты — при желании в payload_json
+                            } else {
+                                $delta = (int)($ov->price_delta_cents ?? 0);
+                            }
+                        }
+
+                        $oi->options()->create([
+                            'option_value_id'   => $opt->option_value_id,
+                            'title'             => $ov?->title ?? 'Option',
+                            'price_delta_cents' => $delta,
+                        ]);
+                        continue;
+                    }
+
+                    // 2) range-опция
+                    if ($opt->option_group_id !== null) {
+                        $oi->options()->create([
+                            'option_value_id'   => null,
+                            'option_group_id'   => $opt->option_group_id,
+                            'title'             => $opt->group?->title ?? 'Range',
+                            'price_delta_cents' => (int)($opt->price_delta_cents ?? 0),
+                            'selected_min'      => (int)($opt->selected_min ?? 0),
+                            'selected_max'      => (int)($opt->selected_max ?? 0),
+                            'payload_json'      => $opt->payload_json ?? null,
+                        ]);
+                        continue;
+                    }
+                }
+            }
+
+            return $order;
+        });
+
+        CartTools::clearUserCart($user->id);
+
+        // 3) Готовим line items для Stripe (как у тебя было)
         $optIds = $cart->items->flatMap(fn($ci) => $ci->options->pluck('option_value_id'))->filter()->unique()->values();
-        $ovMap = OptionValue::with('group')->whereIn('id', $optIds)->get()->keyBy('id');
+        $ovMap  = OptionValue::with('group')->whereIn('id', $optIds)->get()->keyBy('id');
 
         $lineItems = [];
         foreach ($cart->items as $ci) {
@@ -172,19 +262,19 @@ class CheckoutController extends Controller
             if (count($rangeLabels)) $parts[] = implode(', ', $rangeLabels);
 
             $nameBase = $ci->product->name . (count($parts) ? ' (' . implode(' | ', $parts) . ')' : '');
-            $name = $nameBase . ' x' . $ci->qty; // 👈 чтобы видно было кол-во
+            $name     = $nameBase . ' x' . $ci->qty;
 
             $lineItems[] = [
                 'price_data' => [
                     'currency' => 'usd',
                     'product_data' => ['name' => $name],
-                    'unit_amount' => $ci->line_total_cents,  // 👈 ВСЯ сумма по строке
+                    'unit_amount' => $ci->line_total_cents,  // вся сумма по строке
                 ],
-                'quantity' => 1,                              // 👈 одна строка = одна позиция
+                'quantity' => 1,
             ];
         }
 
-        $stripe = new StripeClient(config('services.stripe.secret'));
+        $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
 
         /** @var \Stripe\Checkout\Session $session */
         $session = $stripe->checkout->sessions->create([
@@ -193,11 +283,20 @@ class CheckoutController extends Controller
             'line_items' => $lineItems,
             'success_url' => route('checkout.success') . '?session_id={CHECKOUT_SESSION_ID}',
             'cancel_url'  => route('checkout.cancel'),
-            'metadata'    => ['user_id' => (string) $user->id],
+            'metadata'    => [
+                'user_id'  => (string) $user->id,
+                'order_id' => (string) $order->id, // удобно на вебхуке
+            ],
+        ]);
+
+        // 4) Сохраняем связь заказа с сессией Stripe
+        $order->update([
+            'checkout_session_id' => $session->id,
+            'payment_id'          => $session->id, // можно одинаково хранить
         ]);
 
         return response()->json([
-            'id'  => $session->id,  // ✅ Intelephense перестанет ругаться
+            'id'  => $session->id,
             'url' => $session->url,
         ]);
     }
@@ -212,114 +311,22 @@ class CheckoutController extends Controller
         $sessionId = (string) $request->query('session_id');
         abort_unless($sessionId, 400, 'Missing session_id');
 
-        $stripe = new StripeClient(config('services.stripe.secret'));
-
-        /** @var \Stripe\Checkout\Session $session */
+        $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
         $session = $stripe->checkout->sessions->retrieve($sessionId, []);
 
-        abort_unless($session && $session->payment_status === 'paid', 402, 'Payment not completed');
+        // Попробуем найти заказ по session_id
+        $order = Order::where('checkout_session_id', $sessionId)->first();
 
-        $userId = (int)($session->metadata['user_id'] ?? 0);
-        $currentId = (int) Auth::id();
-        abort_unless($currentId === $userId, 403, 'Wrong user');
+        // Если webhook уже успел → будет PAID, если нет — покажем страничку "обрабатывается"
+        if ($order) {
+            // Можно сразу на страницу заказа
+            return redirect()->route('orders.show', $order)->with('success', $order->status === Order::STATUS_PAID
+                ? 'Payment confirmed!'
+                : 'Payment is being processed...');
+        }
 
-        $order = DB::transaction(function () use ($userId, $sessionId, $request) { // 👈 добавили $sessionId
-            $cart = Cart::firstOrCreate(['user_id' => $userId])
-                ->load(['items.product', 'items.options.group']);
-            abort_if($cart->items->isEmpty(), 422, 'Cart is empty');
-
-            $subtotal = $cart->items->sum('line_total_cents');
-            $shipping = 0;
-            $tax = 0;
-            $total = $subtotal + $shipping + $tax;
-
-            $order = Order::create([
-                'user_id' => $userId,
-                'status' => 'paid',
-                'currency' => 'USD',
-                'subtotal_cents' => $subtotal,
-                'shipping_cents' => $shipping,
-                'tax_cents' => $tax,
-                'total_cents' => $total,
-                'payment_method' => 'stripe',
-                'payment_id' => $sessionId, // ✅ теперь доступна
-                'placed_at' => now(),
-                'game_payload' => [
-                    'nickname' => $request->session()->pull('checkout.nickname'), // 👈 достали и очистили
-                ],
-            ]);
-
-            // снапшотим айтемы
-            foreach ($cart->items as $ci) {
-                $oi = $order->items()->create([
-                    'product_id' => $ci->product_id,
-                    'product_name' => $ci->product->name,
-                    'unit_price_cents' => $ci->unit_price_cents,
-                    'qty' => $ci->qty,
-                    'line_total_cents' => $ci->line_total_cents,
-                ]);
-
-                foreach ($ci->options as $opt) {
-                    // 1) value-опция (radio/checkbox)
-                    if ($opt->option_value_id !== null) {
-                        $ov = \App\Models\OptionValue::with('group')->find($opt->option_value_id);
-                        $g  = $ov?->group;
-
-                        $delta = 0;
-                        if ($g) {
-                            if (($g->type ?? null) === \App\Models\OptionGroup::TYPE_SELECTOR || ($g->type ?? null) === 'selector') {
-                                if (($g->pricing_mode ?? 'absolute') === 'percent') {
-                                    // если хотите хранить проценты — можно в payload_json, а cents оставить 0
-                                    // $pct = (float)($ov->delta_percent ?? $ov->value_percent ?? 0);
-                                } else {
-                                    $delta = (int)($ov->delta_cents ?? $ov->price_delta_cents ?? 0);
-                                }
-                            } elseif (in_array($g->type ?? null, [
-                                \App\Models\OptionGroup::TYPE_RADIO_PERCENT,
-                                \App\Models\OptionGroup::TYPE_CHECKBOX_PERCENT,
-                            ], true)) {
-                                // здесь тоже проценты; по аналогии можно сохранить в payload_json
-                            } else {
-                                $delta = (int)($ov->price_delta_cents ?? 0);
-                            }
-                        }
-
-                        $oi->options()->create([
-                            'option_value_id'   => $opt->option_value_id,
-                            'title'             => $ov?->title ?? 'Option',
-                            'price_delta_cents' => $delta,
-                        ]);
-                        continue;
-                    }
-
-                    // 2) range-опция (double_range_slider) — определяем по наличию option_group_id
-                    if ($opt->option_group_id !== null) {
-                        $oi->options()->create([
-                            'option_value_id'   => null,
-                            'option_group_id'   => $opt->option_group_id,
-                            'title'             => $opt->group?->title ?? 'Range',
-                            'price_delta_cents' => (int)($opt->price_delta_cents ?? 0), // ← было $ov...
-                            'selected_min'      => (int)($opt->selected_min ?? 0),
-                            'selected_max'      => (int)($opt->selected_max ?? 0),
-                            'payload_json'      => $opt->payload_json ?? null,
-                        ]);
-                        continue;
-                    }
-
-                    // 3) Фоллбек: неизвестная форма — при желании логируем
-                    // logger()->warning('Unknown cart item option shape', ['opt_id' => $opt->id]);
-                }
-            }
-
-            // очистка корзины
-            foreach ($cart->items as $ci) {
-                $ci->delete();
-            }
-
-            return $order;
-        });
-
-        return redirect()->route('orders.show', $order)->with('success', 'Order placed!');
+        // Фоллбек
+        return redirect()->route('orders.index')->with('success', 'Payment is being processed...');
     }
 
 

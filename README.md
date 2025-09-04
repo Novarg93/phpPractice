@@ -14,3 +14,9 @@ php artisan key:generate
 php artisan migrate
 npm run dev
 php artisan serve
+
+
+-------
+pusher 
+php artisan queue:work (рт ноты в админке)
+php artisan schedule:work (удаление заказов через 24ч)

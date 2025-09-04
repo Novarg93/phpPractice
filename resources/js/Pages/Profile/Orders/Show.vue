@@ -1,34 +1,18 @@
 <script setup lang="ts">
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 import GameNicknameForm from '@/Components/GameNicknameForm.vue'
-
+import OrderStatusBadge from '@/Components/OrderStatusBadge.vue'
+import { router } from '@inertiajs/vue3'
 
 const props = defineProps<{
   order: {
-    id: number
-    status: string
-    placed_at: string | null
-    total_cents: number
-    currency: string
-    nickname?: string | null
-    needs_nickname: boolean
-    shipping_address: any
+    id: number; status: 'pending' | 'paid' | 'in_progress' | 'completed' | 'refund' | string
+    placed_at: string | null; total_cents: number; currency: string
+    nickname?: string | null; needs_nickname: boolean; shipping_address: any
     items: Array<{
-      product_name: string
-      qty: number
-      unit_price_cents: number
-      line_total_cents: number
-      image_url?: string
-      options?: Array<{
-        id: number
-        title: string
-        calc_mode: 'absolute' | 'percent'
-        scope: 'unit' | 'total'
-        value_cents?: number | null
-        value_percent?: number | null
-      }>
-      ranges?: Array<{ title: string; label: string }>
-      has_qty_slider?: boolean
+      product_name: string; qty: number; unit_price_cents: number; line_total_cents: number
+      image_url?: string; options?: Array<{ id: number; title: string; calc_mode: 'absolute' | 'percent'; scope: 'unit' | 'total'; value_cents?: number | null; value_percent?: number | null }>
+      ranges?: Array<{ title: string; label: string }>; has_qty_slider?: boolean
     }>
   }
 }>()
@@ -36,15 +20,19 @@ const props = defineProps<{
 function formatPrice(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: props.order.currency }).format(cents / 100)
 }
+
+function retryPay(orderId: number) {
+  router.post(route('orders.pay', orderId))
+}
 </script>
 
 <template>
   <DefaultLayout>
     <section class="w-[90%] 2xl:w-[75%] mx-auto py-8">
-      <h1 class="text-3xl font-semibold mb-6">Order #{{ order.id }}</h1>
-
-
-
+      <div class="flex items-center gap-3 mb-6">
+        <h1 class="text-3xl font-semibold">Order #{{ order.id }}</h1>
+        <OrderStatusBadge :status="order.status" />
+      </div>
 
       <div class="grid lg:grid-cols-3 gap-6">
         <!-- items -->
@@ -56,7 +44,6 @@ function formatPrice(cents: number) {
                 :alt="it.product_name">
               <div>
                 <div class="font-medium">{{ it.product_name }}</div>
-
 
                 <!-- value options -->
                 <div v-if="it.options?.length" class="text-sm text-muted-foreground">
@@ -70,7 +57,7 @@ function formatPrice(cents: number) {
                         </template>
                         <template v-else>
                           {{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(opt.value_cents ?? 0) }} {{
-                            opt.scope }}
+                          opt.scope }}
                         </template>
                         )
                       </span>
@@ -85,8 +72,6 @@ function formatPrice(cents: number) {
                   </div>
                 </div>
 
-                <!-- qty + price -->
-
                 <template v-if="it.has_qty_slider">
                   Qty: {{ it.qty }} · {{ formatPrice(it.unit_price_cents) }}/each
                 </template>
@@ -97,15 +82,27 @@ function formatPrice(cents: number) {
         </div>
 
         <!-- summary -->
-        <div class="lg:col-span-1">
+        <div class="lg:col-span-1 space-y-4">
           <div class="border border-border rounded-lg p-4">
-            <div class="text-sm text-muted-foreground">{{ order.placed_at }}</div>
+            <div class="flex items-center justify-between">
+              <div class="text-sm text-muted-foreground">{{ order.placed_at || '—' }}</div>
+              <OrderStatusBadge :status="order.status" />
+            </div>
             <div class="mt-2 text-lg font-semibold">Total: {{ formatPrice(order.total_cents) }}</div>
+            <div v-if="order.status === 'pending'" class="mt-4">
+              <button type="button" class="px-4 py-2 rounded-md bg-primary text-primary-foreground hover:opacity-90"
+                @click="retryPay(order.id)">
+                Оплатить сейчас
+              </button>
+              <p class="text-xs text-muted-foreground mt-1">
+                Если платёж не прошёл, вы можете повторить оплату.
+              </p>
+            </div>
           </div>
 
-          <GameNicknameForm class="mt-4" :initial-nickname="props.order.nickname ?? ''"
-            :required=true :save-url="route('orders.nickname', props.order.id)"
-            label="Character name for delivery" help="No spaces" />
+
+          <GameNicknameForm v-if="order.needs_nickname" :initial-nickname="props.order.nickname ?? ''" :required="true"
+            :save-url="route('orders.nickname', props.order.id)" label="Character name for delivery" help="No spaces" />
         </div>
       </div>
     </section>
