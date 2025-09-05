@@ -336,6 +336,13 @@ class ProductForm
                                     Toggle::make('is_required')
                                         ->label('Required')
                                         ->inline(false)
+                                        ->afterStateHydrated(function ($state, callable $set, callable $get) {
+                                            // Если создаём новую группу UNIQUE_D4 — включаем Required,
+                                            // но НЕ перетираем сохранённое значение у существующих записей
+                                            if ($state === null && $get('type') === \App\Models\OptionGroup::TYPE_UNIQUE_D4) {
+                                                $set('is_required', true);
+                                            }
+                                        })
                                         ->columnSpan(12),
 
                                     Select::make('selection_mode')

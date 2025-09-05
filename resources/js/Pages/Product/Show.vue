@@ -7,7 +7,7 @@ import { resolveGroupComponent } from '@/Components/product/groups/registry'
 import { useProductOptions } from '@/composables/useProductOptions'
 import { usePricing } from '@/composables/usePricing'
 import type { Game, Category } from '@/types'
-import type { ProductWithGroups, SelectorGroup, OptionItem } from '@/types/product-options'
+import type { ProductWithGroups, SelectorGroup } from '@/types/product-options'
 import { ref, computed, onMounted } from 'vue'
 import RareItemBuilder from '@/Components/product/RareItemBuilder.vue'
 import UniqueD4Builder from '@/Components/product/UniqueD4Builder.vue'
@@ -23,7 +23,9 @@ const { unitCents, totalCents } = usePricing(props.product, selectionByGroup)
 const { loadSummary } = useCartSummary()
 
 // только selector-группы
-const groups = computed(() => (props.product.option_groups ?? []).filter(g => g.type === 'selector') as SelectorGroup[])
+const groups = computed(
+  () => (props.product.option_groups ?? []).filter(g => g.type === 'selector') as SelectorGroup[]
+)
 
 function byCodeOrTitle(code: string, rx: RegExp): SelectorGroup | undefined {
   return groups.value.find(g => (g as any).code === code)
@@ -41,7 +43,12 @@ const statsGroupD4 = computed(() => byCode('unique_d4_stats'))
 const gaGroupD4 = computed(() => statsGroupD4.value ? byCode('ga') : undefined)
 
 const gaModel = computed<number | null>({
-  get: () => gaGroupD4.value ? (selectionByGroup.value as any)[gaGroupD4.value.id] ?? null : null,
+  get: () => {
+    if (!gaGroupD4.value) return null
+    const raw = (selectionByGroup.value as any)[gaGroupD4.value.id]
+    if (Array.isArray(raw)) return raw.length ? Number(raw[0]) : null
+    return typeof raw === 'number' && Number.isFinite(raw) ? raw : null
+  },
   set: v => { if (gaGroupD4.value) (selectionByGroup.value as any)[gaGroupD4.value.id] = v }
 })
 
@@ -59,9 +66,9 @@ const statsModel = computed<number[]>({
 /* ============================
    RARE BUILDER (class/slot/affix)
 ============================ */
-const classGroup = computed(() => byCodeOrTitle('class', /class|класс/))
-const slotGroup = computed(() => byCodeOrTitle('slot', /slot|слот|предмет/))
-const affixGroup = computed(() => byCodeOrTitle('affix', /affix|аффикс|характеристик/))
+const classGroup  = computed(() => byCodeOrTitle('class', /class|класс/))
+const slotGroup   = computed(() => byCodeOrTitle('slot', /slot|слот|предмет/))
+const affixGroup  = computed(() => byCodeOrTitle('affix', /affix|аффикс|характеристик/))
 
 // для редкой логики GA используем 'ga' только если НЕ включён D4
 const gaGroupRare = computed(() => !statsGroupD4.value ? byCodeOrTitle('ga', /\b(ga|greater)\b/) : undefined)
@@ -92,9 +99,8 @@ const classModel = computed<number | null>({
     return typeof raw === 'number' && Number.isFinite(raw) ? raw : null
   },
   set: (v) => {
-    const g = classGroup.value
-    if (!g) return
-      ; (selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
+    const g = classGroup.value; if (!g) return
+    (selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
   },
 })
 
@@ -108,9 +114,8 @@ const slotModel = computed<number | null>({
     return typeof raw === 'number' && Number.isFinite(raw) ? raw : null
   },
   set: (v) => {
-    const g = slotGroup.value
-    if (!g) return
-      ; (selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
+    const g = slotGroup.value; if (!g) return
+    (selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
   },
 })
 
@@ -125,10 +130,9 @@ const affixModel = computed<number[]>({
     return []
   },
   set: (v) => {
-    const g = affixGroup.value
-    if (!g) return
+    const g = affixGroup.value; if (!g) return
     const next = Array.isArray(v) ? v : (v != null ? [Number(v)] : [])
-      ; (selectionByGroup.value as any)[g.id] = next
+    ;(selectionByGroup.value as any)[g.id] = next
   },
 })
 
@@ -141,28 +145,57 @@ const affixGaModel = computed<number[]>({
   },
 })
 
-// нормализация при маунте, как у тебя
+// нормализация при маунте
 onMounted(() => {
   const cg = classGroup.value
   if (cg) {
     const raw = (selectionByGroup.value as any)[cg.id]
-    if (Array.isArray(raw))
-      (selectionByGroup.value as any)[cg.id] = raw.length ? Number(raw[0]) : null
+    if (Array.isArray(raw)) (selectionByGroup.value as any)[cg.id] = raw.length ? Number(raw[0]) : null
   }
 
   const sg = slotGroup.value
   if (sg) {
     const raw = (selectionByGroup.value as any)[sg.id]
-    if (Array.isArray(raw))
-      (selectionByGroup.value as any)[sg.id] = raw.length ? Number(raw[0]) : null
+    if (Array.isArray(raw)) (selectionByGroup.value as any)[sg.id] = raw.length ? Number(raw[0]) : null
+  }
+
+  // Rare GA: если пусто — Non GA
+  const gRare = gaGroupRare.value
+  if (gRare) {
+    const raw = (selectionByGroup.value as any)[gRare.id]
+    const cur = Array.isArray(raw) ? raw[0] : raw
+    if (cur == null) {
+      const non = gRare.values?.find(v => Number((v as any)?.meta?.ga_count) === 0)
+        ?? gRare.values?.find(v => /(^|\s)non[-\s]?ga($|\s)|\b0\s*ga\b/i.test(String(v.title ?? '')))
+        ?? gRare.values?.[0]
+      ;(selectionByGroup.value as any)[gRare.id] = non?.id ?? null
+    }
+  }
+
+  // D4 GA: привести к number|null и тоже выставить Non GA по-умолчанию
+  const gD4 = gaGroupD4.value
+  if (gD4) {
+    const raw = (selectionByGroup.value as any)[gD4.id]
+    if (Array.isArray(raw)) {
+      (selectionByGroup.value as any)[gD4.id] = raw.length ? Number(raw[0]) : null
+    }
+    const cur = (selectionByGroup.value as any)[gD4.id]
+    if (cur == null) {
+      const non =
+        gD4.values?.find(v => Number((v as any)?.meta?.ga_count) === 0) ??
+        gD4.values?.find(v => /(^|\s)non[-\s]?ga($|\s)|\b0\s*ga\b/i.test(String(v.title ?? ''))) ??
+        gD4.values?.[0]
+      ;(selectionByGroup.value as any)[gD4.id] = non?.id ?? null
+    }
   }
 
   const ag = affixGroup.value
   if (ag) {
     const raw = (selectionByGroup.value as any)[ag.id]
-    if (!Array.isArray(raw))
+    if (!Array.isArray(raw)) {
       (selectionByGroup.value as any)[ag.id] =
         typeof raw === 'number' && Number.isFinite(raw) ? [raw] : []
+    }
   }
 })
 
@@ -182,7 +215,10 @@ const hiddenIds = computed(() => {
   return set
 })
 const otherGroups = computed(() =>
-  (props.product.option_groups ?? []).filter(g => !hiddenIds.value.has(g.id))
+  (props.product.option_groups ?? []).filter(g =>
+    g.type !== 'unique_d4' &&              // не показываем контейнер D4
+    !hiddenIds.value.has(g.id)             // не показываем rare-служебные и D4-служебные
+  )
 )
 
 /* ============================
@@ -208,20 +244,42 @@ const errors = ref<string[]>([])
 const triedToSubmit = ref(false)
 
 const missingRequiredIds = computed<number[]>(() => {
+  // пропускаем служебные D4-группы
+  const skip = new Set<number>(
+    [gaGroupD4.value?.id, statsGroupD4.value?.id].filter(Boolean) as number[]
+  )
+
   return (props.product.option_groups ?? [])
     .filter((g: any) => {
       if (g.type !== 'selector' || !g.is_required) return false
-      const sel = selectionByGroup.value[g.id]
+      if (skip.has(g.id)) return false
+
+      const sel = (selectionByGroup.value as any)[g.id]
       if (g.selection_mode === 'single') return typeof sel !== 'number'
       return !Array.isArray(sel) || sel.length === 0
     })
     .map((g: any) => g.id)
 })
+
+const rareGaOk = ref(true)
+
 const missingRequiredSet = computed(() => new Set(missingRequiredIds.value))
-const canAddToCart = computed(() => missingRequiredIds.value.length === 0)
+const canAddToCart = computed(() => {
+  if (missingRequiredIds.value.length) return false
+
+  // если используем Rare-ветку (а не D4)
+  if (gaGroupRare.value) {
+    const need = gaLimit.value
+    const have = (affixGaModel.value?.length ?? 0)
+    if (need !== have) return false
+    if (!rareGaOk.value) return false
+  }
+  return true
+})
 
 function formatPrice(cents: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((cents || 0) / 100)
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+    .format((cents || 0) / 100)
 }
 const displayCents = computed(() => (qtyGroup ? unitCents.value : totalCents.value) + bundleCents.value)
 
@@ -230,6 +288,13 @@ async function addToCart() {
   triedToSubmit.value = true
 
   if (!canAddToCart.value) {
+    if (gaGroupRare.value) {
+      const need = gaLimit.value
+      const have = (affixGaModel.value?.length ?? 0)
+      if (need !== have) {
+        errors.value.push(`Выберите ровно ${need} аффикс(а/ов) с отметкой GA.`)
+      }
+    }
     errors.value.push('Заполните обязательные опции перед добавлением в корзину.')
     return
   }
@@ -260,7 +325,6 @@ async function addToCart() {
 
     // 2) обычный товар
     const payload = buildAddToCartPayload()
-
 
     const hasD4 = !!statsGroupD4.value
     if (hasD4) {
@@ -313,25 +377,48 @@ async function addToCart() {
           </div>
 
           <!-- UNIQUE D4 BUILDER -->
-          <UniqueD4Builder v-if="gaGroupD4 && statsGroupD4" :ga-group="gaGroupD4" :stats-group="statsGroupD4"
-            v-model:ga-selected="gaModel" v-model:stats-selected="statsModel" />
+          <UniqueD4Builder
+            v-if="gaGroupD4 && statsGroupD4"
+            :ga-group="gaGroupD4"
+            :stats-group="statsGroupD4"
+            v-model:ga-selected="gaModel"
+            v-model:stats-selected="statsModel"
+          />
 
           <!-- RARE BUILDER -->
-          <RareItemBuilder v-if="classGroup && slotGroup && affixGroup" :class-group="classGroup"
-            :slot-group="slotGroup" :affix-group="affixGroup" :currency="'USD'" :ga-limit="gaLimit"
-            v-model:class-id="classModel" v-model:slot-id="slotModel" v-model:affix-ids="affixModel"
-            v-model:affix-ga-ids="affixGaModel" />
+          <RareItemBuilder
+            v-if="classGroup && slotGroup && affixGroup"
+            :class-group="classGroup"
+            :slot-group="slotGroup"
+            :affix-group="affixGroup"
+            :currency="'USD'"
+            :ga-limit="gaLimit"
+            v-model:class-id="classModel"
+            v-model:slot-id="slotModel"
+            v-model:affix-ids="affixModel"
+            v-model:affix-ga-ids="affixGaModel"
+            @ga-valid="rareGaOk = $event"
+          />
 
           <!-- Остальные группы (кроме служебных rare + D4) -->
           <div v-if="otherGroups.length" class="mt-4 space-y-6">
-            <div v-for="group in otherGroups" :key="group.id" class="border rounded-lg p-3"
-              :class="triedToSubmit && missingRequiredSet.has(group.id) ? 'border-red-400' : 'border-border'">
-              <component :is="resolveGroupComponent(group.type, group) || 'div'" :group="group as any"
-                v-model:selected="(selectionByGroup as any)[group.id]" />
-              <p v-if="triedToSubmit && missingRequiredSet.has(group.id)" class="mt-1 text-sm text-red-600">
-                Это поле обязательно для выбора
-              </p>
-            </div>
+            <template v-for="group in otherGroups">
+              <div
+                v-if="resolveGroupComponent(group.type, group)"
+                :key="group.id"
+                class="border rounded-lg p-3"
+                :class="triedToSubmit && missingRequiredSet.has(group.id) ? 'border-red-400' : 'border-border'"
+              >
+                <component
+                  :is="resolveGroupComponent(group.type, group)"
+                  :group="group as any"
+                  v-model:selected="(selectionByGroup as any)[group.id]"
+                />
+                <p v-if="triedToSubmit && missingRequiredSet.has(group.id)" class="mt-1 text-sm text-red-600">
+                  Это поле обязательно для выбора
+                </p>
+              </div>
+            </template>
           </div>
 
           <!-- Кнопка -->

@@ -10,15 +10,16 @@ const props = defineProps<{
   gaLimit?: number
 }>()
 
+const emit = defineEmits<{ (e: 'ga-valid', ok: boolean): void }>()
+
 // Внешние v-model (биндим прямо в selectionByGroup на родителе)
 const classId = defineModel<number | null>('classId', { default: null })
 const slotId = defineModel<number | null>('slotId', { default: null })
 const affixIds = defineModel<number[]>('affixIds', { default: [] }) // до 3
 const affixGaIds = defineModel<number[]>('affixGaIds', { default: [] })
 const gaCheckedCount = computed(() => Number(ga1.value) + Number(ga2.value) + Number(ga3.value))
-
-
 const gaLimitSafe = computed(() => Math.min(3, Math.max(0, Number(props.gaLimit ?? 0))))
+const gaExact = computed(() => gaCheckedCount.value === gaLimitSafe.value)
 const ga1 = ref(false), ga2 = ref(false), ga3 = ref(false)
 
 // если аффикс сняли — снимаем и его GA
@@ -62,6 +63,11 @@ watch([affixIds, ga1, ga2, ga3], () => {
   ].filter(Boolean) as number[]
   affixGaIds.value = ids
 })
+
+watch([gaCheckedCount, gaLimitSafe], () => {
+  emit('ga-valid', gaExact.value)
+}, { immediate: true })
+
 
 
 const isPercent = (g: SelectorGroup) => g.pricing_mode === 'percent'
@@ -180,7 +186,18 @@ watch(slotId, () => {
 
     <!-- AFFIXES (3 селектора) -->
     <div>
-      <div class="font-medium mb-1">Affixes <span class="text-xs text-muted-foreground">(up to 3)</span></div>
+      <div class="font-medium mb-1 flex items-center justify-between">
+        <span>
+          Affixes <span class="text-xs text-muted-foreground">(up to 3)</span>
+        </span>
+        <span class="text-xs" :class="gaExact ? 'text-muted-foreground' : 'text-red-600'">
+          GA: {{ gaCheckedCount }}/{{ gaLimitSafe }} chosen
+          <template v-if="!gaExact && gaLimitSafe > 0"> — выберите ровно {{ gaLimitSafe }}</template>
+          <template v-else-if="!gaExact && gaLimitSafe === 0"> — не выбирайте GA</template>
+        </span>
+        <!-- индикатор: сколько GA отмечено из лимита -->
+        
+      </div>
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
         <div class="flex gap-2 items-center">

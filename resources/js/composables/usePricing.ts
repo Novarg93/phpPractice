@@ -6,14 +6,32 @@ import type {
   QtyGroup,
 } from '@/types/product-options'
 
-function isPerUnitFlag(v: unknown) { return v === true || v === 1 || v === '1' }
+/* ───────── helpers ───────── */
 const isRangeSel = (x: unknown): x is { min: number; max: number } =>
   !!x && typeof x === 'object' && 'min' in (x as any) && 'max' in (x as any)
 
-/* ───────── helpers: clamp/snap/align ───────── */
+// ⚠️ на бэке null => per-unit. Делаем так же.
+function scopeIsUnit(g: any): boolean {
+  return (g?.multiply_by_qty === null || g?.multiply_by_qty === undefined)
+    ? true
+    : (g.multiply_by_qty === true || g.multiply_by_qty === 1 || g.multiply_by_qty === '1')
+}
+
+function isPercentGroup(g: any): boolean {
+  return g?.pricing_mode === 'percent'
+      || g?.type === 'radio_percent'
+      || g?.type === 'checkbox_percent'
+}
+
+function selectedIds(sel: unknown): number[] {
+  if (Array.isArray(sel)) return sel.map(Number).filter(Number.isFinite)
+  const n = Number(sel)
+  return Number.isFinite(n) ? [n] : []
+}
+
+/* ───────── clamp/snap/align для double_range ───────── */
 function clamp(v: number, a: number, b: number) { return Math.min(b, Math.max(a, v)) }
 function snapToGrid(val: number, baseMin: number, step: number) {
-  // как в твоём слайдере: «вниз» к ближайшему допустимому значению
   return val - ((val - baseMin) % step)
 }
 function alignRange(g: DoubleRangeGroup, sel: {min: number; max: number}) {
@@ -25,32 +43,28 @@ function alignRange(g: DoubleRangeGroup, sel: {min: number; max: number}) {
   const b = snapToGrid(clamp(sel.max, Smin, Smax), Smin, step)
   const min = Math.min(a, b)
   const max = Math.max(a, b)
-  return { min, max, step, Smin }
-}
-function unitsInclusive(min: number, max: number, step: number) {
-  // включительно
-  return Math.floor((max - min) / step) + 1
+  return { min, max }
 }
 
-/* ───────── FLAT: как в CartController → exclusive шаги, без base_fee ───────── */
+/* FLAT (exclusive steps) */
 function priceRangeFlat(g: DoubleRangeGroup, sel: { min: number; max: number }) {
-  const { min, max, step } = alignRange(g, sel)
-  // exclusive: сколько «ступеней» пройти от min до max
-  const steps = Math.max(0, Math.floor((max - min) / step))
+  const { min, max } = alignRange(g, sel)
+  const step = Math.max(1, g.slider_step || 1)
+  const steps = Math.max(0, Math.floor((max - min) / step)) // exclusive
   const unit = Number(g.unit_price_cents ?? 0)
   return steps * unit
 }
 
-/* ───────── TIERED: полностью зеркалим CartController::priceTiered ───────── */
+/* TIERED (как на бэке) */
 function priceRangeTiered(g: DoubleRangeGroup, sel: { min: number; max: number }) {
-  const { min, max, step } = alignRange(g, sel)
+  const { min, max } = alignRange(g, sel)
   const spanTotal = Math.max(0, max - min) // exclusive
 
   const tiers = (g.tiers ?? []).slice().sort((x, y) => x.from - y.from)
 
   let piecewise = 0
   let highestUnit = 0
-  let weightedSum = 0 // unit(after multiplier) * (to-from)
+  let weightedSum = 0
 
   for (const t of tiers) {
     const from = Math.max(t.from, min)
@@ -60,10 +74,8 @@ function priceRangeTiered(g: DoubleRangeGroup, sel: { min: number; max: number }
     let steps = to - from // exclusive
     let unit = Number(t.unit_price_cents ?? 0)
 
-    // multiplier влияет и на weightedSum (как в бэке)
     if (t.multiplier) unit = Math.round(unit * Number(t.multiplier))
 
-    // min_block округляем вверх
     if (t.min_block && t.min_block > 1) {
       steps = Math.ceil(steps / Number(t.min_block)) * Number(t.min_block)
     }
@@ -73,16 +85,16 @@ function priceRangeTiered(g: DoubleRangeGroup, sel: { min: number; max: number }
 
     piecewise += cost
     highestUnit = Math.max(highestUnit, unit)
-    weightedSum += unit * (to - from) // без блоков/кап, но с multiplier
+    weightedSum += unit * (to - from)
   }
 
   const strategy = g.tier_combine_strategy ?? 'sum_piecewise'
   const variable =
     strategy === 'highest_tier_only' ? highestUnit * spanTotal
     : strategy === 'weighted_average' ? Math.round((spanTotal > 0 ? weightedSum / spanTotal : 0) * spanTotal)
-    : piecewise // sum_piecewise
+    : piecewise
 
-  const base = Number(g.base_fee_cents ?? 0) // только для tiered
+  const base = Number(g.base_fee_cents ?? 0)
   return base + variable
 }
 
@@ -91,45 +103,39 @@ export function usePricing(
   product: ProductWithGroups,
   selectionByGroup: Ref<Record<number, Selection>>
 ) {
-  // selector: absolute + per-unit
+  // ABSOLUTE per-unit
   const optionsPerUnitCents = computed(() => {
     let sum = 0
     ;(product.option_groups ?? []).forEach((g: any) => {
-      if (g.type !== 'selector' || g.pricing_mode !== 'absolute' || !isPerUnitFlag(g.multiply_by_qty)) return
-      const sel = selectionByGroup.value[g.id]
-      const ids = g.selection_mode === 'single'
-        ? (typeof sel === 'number' ? [sel] : [])
-        : (Array.isArray(sel) ? sel : [])
-      ids.forEach((id: number) => {
-        const v = g.values.find((x: any) => x.id === id)
+      if (g?.type !== 'selector' || g?.pricing_mode !== 'absolute' || !scopeIsUnit(g)) return
+      const ids = selectedIds(selectionByGroup.value[g.id])
+      ids.forEach((id) => {
+        const v = (g.values ?? []).find((x: any) => x.id === id)
         if (v) sum += Number(v.delta_cents ?? 0)
       })
     })
     return sum
   })
 
-  // selector: absolute + per-order
+  // ABSOLUTE per-order
   const optionsPerOrderCents = computed(() => {
     let sum = 0
     ;(product.option_groups ?? []).forEach((g: any) => {
-      if (g.type !== 'selector' || g.pricing_mode !== 'absolute' || isPerUnitFlag(g.multiply_by_qty)) return
-      const sel = selectionByGroup.value[g.id]
-      const ids = g.selection_mode === 'single'
-        ? (typeof sel === 'number' ? [sel] : [])
-        : (Array.isArray(sel) ? sel : [])
-      ids.forEach((id: number) => {
-        const v = g.values.find((x: any) => x.id === id)
+      if (g?.type !== 'selector' || g?.pricing_mode !== 'absolute' || scopeIsUnit(g)) return
+      const ids = selectedIds(selectionByGroup.value[g.id])
+      ids.forEach((id) => {
+        const v = (g.values ?? []).find((x: any) => x.id === id)
         if (v) sum += Number(v.delta_cents ?? 0)
       })
     })
     return sum
   })
 
-  // double_range_slider → всегда считаем как per-unit надбавку
+  // DOUBLE RANGE → всегда per-unit надбавка
   const totalRangePerUnitCents = computed(() => {
     let sum = 0
     ;(product.option_groups ?? []).forEach((g: any) => {
-      if (g.type !== 'double_range_slider') return
+      if (g?.type !== 'double_range_slider') return
       const sel = selectionByGroup.value[g.id]
       if (!isRangeSel(sel)) return
       sum += (g.pricing_mode === 'tiered')
@@ -139,53 +145,51 @@ export function usePricing(
     return sum
   })
 
-  // selector: percent + per-unit
-  const percentPerUnitFactor = computed(() => {
-    let f = 1
+  // PERCENT per-unit (суммируем проценты!)
+  const percentPerUnitPct = computed(() => {
+    let pct = 0
     ;(product.option_groups ?? []).forEach((g: any) => {
-      if (g.type !== 'selector' || g.pricing_mode !== 'percent' || !isPerUnitFlag(g.multiply_by_qty)) return
-      const sel = selectionByGroup.value[g.id]
-      const ids = g.selection_mode === 'single'
-        ? (typeof sel === 'number' ? [sel] : [])
-        : (Array.isArray(sel) ? sel : [])
-      ids.forEach((id: number) => {
-        const v = g.values.find((x: any) => x.id === id)
-        if (v) f *= (1 + Number(v.delta_percent ?? 0) / 100)
+      if (!isPercentGroup(g) || !scopeIsUnit(g)) return
+      const ids = selectedIds(selectionByGroup.value[g.id])
+      ids.forEach((id) => {
+        const v = (g.values ?? []).find((x: any) => x.id === id)
+        if (v) pct += Number((v as any).delta_percent ?? (v as any).value_percent ?? 0)
       })
     })
-    return f
+    return pct
   })
 
-  // selector: percent + per-order
-  const percentPerOrderFactor = computed(() => {
-    let f = 1
+  // PERCENT per-order (суммируем проценты!)
+  const percentPerOrderPct = computed(() => {
+    let pct = 0
     ;(product.option_groups ?? []).forEach((g: any) => {
-      if (g.type !== 'selector' || g.pricing_mode !== 'percent' || isPerUnitFlag(g.multiply_by_qty)) return
-      const sel = selectionByGroup.value[g.id]
-      const ids = g.selection_mode === 'single'
-        ? (typeof sel === 'number' ? [sel] : [])
-        : (Array.isArray(sel) ? sel : [])
-      ids.forEach((id: number) => {
-        const v = g.values.find((x: any) => x.id === id)
-        if (v) f *= (1 + Number(v.delta_percent ?? 0) / 100)
+      if (!isPercentGroup(g) || scopeIsUnit(g)) return
+      const ids = selectedIds(selectionByGroup.value[g.id])
+      ids.forEach((id) => {
+        const v = (g.values ?? []).find((x: any) => x.id === id)
+        if (v) pct += Number((v as any).delta_percent ?? (v as any).value_percent ?? 0)
       })
     })
-    return f
+    return pct
   })
 
   const unitCents = computed(() => {
-    const base = Number(product.price_cents || 0)
-                + optionsPerUnitCents.value
-                + totalRangePerUnitCents.value
-    return Math.round(base * percentPerUnitFactor.value)
+    const base =
+      Number(product.price_cents || 0) +
+      optionsPerUnitCents.value +
+      totalRangePerUnitCents.value
+
+    // применяем суммарный процент ОДИН раз
+    return Math.round(base * (1 + percentPerUnitPct.value / 100))
   })
 
   const totalCents = computed(() => {
     const qGroup = (product.option_groups ?? []).find((g: any) => g.type === 'quantity_slider') as QtyGroup | undefined
     const qSel = qGroup ? selectionByGroup.value[qGroup.id] : undefined
-    const qty = typeof qSel === 'number' ? qSel : 1
-    const subtotal = unitCents.value * qty
-    return Math.round((subtotal + optionsPerOrderCents.value) * percentPerOrderFactor.value)
+    const qty = typeof qSel === 'number' && Number.isFinite(qSel) ? qSel : 1
+
+    const preOrder = unitCents.value * qty + optionsPerOrderCents.value
+    return Math.round(preOrder * (1 + percentPerOrderPct.value / 100))
   })
 
   return { unitCents, totalCents }

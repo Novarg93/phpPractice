@@ -309,20 +309,44 @@ class CartController extends Controller
                     $raw = data_get($gaValue->meta ?? [], 'ga_count');
                     $limit = is_numeric($raw) ? (int)$raw : (preg_match('/(\d+)/', (string)($gaValue->title ?? ''), $m) ? (int)$m[1] : 0);
                     $limit = max(0, min(3, $limit)); // RARE: максимум 3
-                    abort_if($affixGaIds->count() > $limit, 422, 'GA count exceeds selected limit.');
+
+                    // требуем РОВНО limit GA-отмеченных аффиксов
+                    abort_if($affixGaIds->count() !== $limit, 422, "Нужно выбрать ровно {$limit} GA.");
                 }
             }
         } else {
-            // D4-ветка: проверяем только лимит 0..4 по выбранным статам
+            // находим GA-группу
             $gaGroup = optional($product->optionGroups)->firstWhere(fn($g) => ($g->code ?? null) === 'ga');
+
+            // какой GA выбран пользователем (по optionIds)
             $selectedGaValueId = collect($gaGroup?->values ?? [])->pluck('id')->intersect($optionIds)->first();
-            if ($selectedGaValueId) {
-                $gaValue = collect($gaGroup->values)->firstWhere('id', $selectedGaValueId);
-                $limit = (int)(data_get($gaValue->meta ?? [], 'ga_count') ?? 0);
-                $limit = max(0, min(4, $limit)); // D4: максимум 4
-                $selectedStatsCount = collect($optionIds)->intersect($d4StatIds)->count();
-                abort_if($selectedStatsCount > $limit, 422, 'GA count exceeds selected limit.');
-            }
+            abort_if(!$selectedGaValueId, 422, 'Select GA level first.');
+
+            // извлекаем лимит GA из meta или из заголовка, clamp к [0..4]
+            $gaValue = collect($gaGroup->values)->firstWhere('id', $selectedGaValueId);
+            $raw     = data_get($gaValue->meta ?? [], 'ga_count');
+            $limit   = is_numeric($raw)
+                ? (int)$raw
+                : (preg_match('/(\d+)/', (string)($gaValue->title ?? ''), $m) ? (int)$m[1] : 0);
+            $limit   = max(0, min(4, $limit));
+
+            // сколько статов реально отмечено из unique_d4_stats
+            $selectedStatsCount = collect($optionIds)->intersect($d4StatIds)->count();
+
+            // ⬇️ если нужно запретить Non GA совсем — раскомментируйте:
+            // abort_if($limit === 0, 422, 'Non-GA is not allowed for this product.');
+
+            // требуем строгое равенство
+            abort_if(
+                $selectedStatsCount !== $limit,
+                422,
+                "Select exactly {$limit} GA attribute(s). Now: {$selectedStatsCount}."
+            );
+
+            // железобетон: игнорируем affix_ga_ids из запроса и помечаем GA только по выбранным статам
+            $affixGaIds = collect($optionIds)
+                ->filter(fn($id) => in_array($id, $d4StatIds, true))
+                ->values();
         }
         // --- END PRE-VALIDATE GA
 
@@ -352,18 +376,17 @@ class CartController extends Controller
         }
 
         // Авторизованный: всё под транзакцией, но без "return" из неё
-        DB::transaction(function () use ($request, $data, $pricing, $optionIds, $rangeList, $affixGaIds, $product) {
+        DB::transaction(function () use ($request, $data, $pricing, $optionIds, $rangeList, $affixGaIds, $product, $qty) {
             $cart = $this->getUserCart($request);
 
             $new = $cart->items()->create([
                 'product_id'       => $data['product_id'],
-                'qty'              => $qty = ($pricing['qty'] ?? null) ?: ($data['qty'] ?? 1), // но лучше: просто $qty извне
+                'qty'              => $qty,
                 'unit_price_cents' => $pricing['unit'],
                 'line_total_cents' => $pricing['line_total'],
             ]);
 
-            // Лучше явно: $new->qty = $qty; $new->save();
-            $new->update(['qty' => $qty]); // чтобы точно положить корректное значение
+
 
             foreach ($optionIds as $vid) {
                 $new->options()->create([
@@ -466,7 +489,7 @@ class CartController extends Controller
         }
 
         $item = CartItem::findOrFail($data['item_id']);
-        $item->options()->whereNull('option_value_id')->delete();
+
         $item->delete();
 
         return response()->json(['ok' => true, 'summary' => $this->summaryPayload($request)]);
