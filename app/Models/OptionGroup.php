@@ -144,46 +144,18 @@ class OptionGroup extends Model
 
             // Синхронизация внутренних групп для Unique D4
             if ($group->type === self::TYPE_UNIQUE_D4) {
-                // Создаёт/обновляет связку групп: GA (dropdown) + unique_d4_stats (4 чекбокса)
-                UniqueD4Synchronizer::sync($group);
-            }
+            \App\Services\UniqueD4Synchronizer::sync($group);
+        }
         });
 
         // Нормализация pricing_mode для известных типов
-        static::saving(function (OptionGroup $g) {
-            if ($g->type === \App\Models\OptionGroup::TYPE_UNIQUE_D4 && $g->unique_d4_is_global) {
-                $key = (string) request()->input('data.optionGroups.*.ga_profile_key'); // в Filament сложнее достать
-                // Поэтому надежнее — сделаем так: если в атрибутах уже есть эти временные “виртуальные” поля, берём их:
-                $key   = $g->getAttribute('ga_profile_key')   ?? $key ?? 'unique_d4_default';
-                $title = $g->getAttribute('ga_profile_title') ?? 'Unique D4 shared pricing';
-                $pm    = $g->getAttribute('ga_profile_pricing_mode') ?? 'absolute';
-                $v1    = $g->getAttribute('ga_profile_ga1');
-                $v2    = $g->getAttribute('ga_profile_ga2');
-                $v3    = $g->getAttribute('ga_profile_ga3');
-                $v4    = $g->getAttribute('ga_profile_ga4');
-
-                if ($key) {
-                    $p = \App\Models\GaProfile::firstOrNew(['key' => $key]);
-                    $p->title        = $title;
-                    $p->pricing_mode = in_array($pm, ['absolute', 'percent'], true) ? $pm : 'absolute';
-                    if ($p->pricing_mode === 'percent') {
-                        $p->ga1_percent = (float) $v1;
-                        $p->ga2_percent = (float) $v2;
-                        $p->ga3_percent = (float) $v3;
-                        $p->ga4_percent = (float) $v4;
-                        // cents занулим, чтобы не путаться:
-                        $p->ga1_cents = $p->ga2_cents = $p->ga3_cents = $p->ga4_cents = 0;
-                    } else {
-                        $p->ga1_cents = (int) $v1;
-                        $p->ga2_cents = (int) $v2;
-                        $p->ga3_cents = (int) $v3;
-                        $p->ga4_cents = (int) $v4;
-                        $p->ga1_percent = $p->ga2_percent = $p->ga3_percent = $p->ga4_percent = null;
-                    }
-                    $p->save();
-                    $g->ga_profile_id = $p->id;
-                }
+        static::saving(function (\App\Models\OptionGroup $g) {
+        if ($g->type === \App\Models\OptionGroup::TYPE_UNIQUE_D4) {
+            if (! $g->unique_d4_is_global) {
+                // если выключили Global — точно отцепим профиль
+                $g->ga_profile_id = null;
             }
-        });
+        }
+    });
     }
 }

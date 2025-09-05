@@ -13,10 +13,10 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
 use Filament\Schemas\Components\Section as UiSection;
 use Filament\Forms\Components\Select as FSelect;
-use Filament\Forms\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Components\Fieldset;
-
-
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Forms\Components\Hidden;
 use App\Models\OptionGroup;
 use Filament\Schemas\Components\Grid as UiGrid;
 use Filament\Forms\Components\Repeater as FRepeater;
@@ -156,20 +156,69 @@ class ProductForm
                                     $pm = $data['range_pricing_mode'] ?? $data['pricing_mode'] ?? null;
                                     $data['pricing_mode'] = in_array($pm, ['flat', 'tiered'], true) ? $pm : 'flat';
                                 } elseif ($type === \App\Models\OptionGroup::TYPE_UNIQUE_D4) {
+                                    // --- UNIQUE D4: готовим labels (строки, максимум 4)
                                     $labels = $data['unique_d4_labels'] ?? [];
-                                    $labels = array_values(array_slice(array_map(
-                                        fn($v) => trim((string)$v),
-                                        (array) $labels
-                                    ), 0, 4));
-                                    $data['unique_d4_labels'] = $labels;
+                                    $data['unique_d4_labels'] = array_values(array_slice(array_map('strval', (array) $labels), 0, 4));
+
+                                    // --- GLOBAL profile (если включен) -> создаём/обновляем профиль и пишем ga_profile_id
+                                    $isGlobal = (bool) ($data['unique_d4_is_global'] ?? false);
+                                    if ($isGlobal) {
+                                        $key   = trim((string)($data['ga_profile_key'] ?? ''));
+                                        $key   = $key !== '' ? $key : 'unique_d4_default'; // дефолтный ключ
+                                        $title = (string)($data['ga_profile_title'] ?? 'Unique D4 shared pricing');
+                                        $pm    = in_array(($data['ga_profile_pricing_mode'] ?? null), ['absolute', 'percent'], true)
+                                            ? $data['ga_profile_pricing_mode'] : 'absolute';
+
+                                        /** @var \App\Models\GaProfile $p */
+                                        $p = \App\Models\GaProfile::firstOrNew(['key' => $key]);
+                                        $p->title        = $title;
+                                        $p->pricing_mode = $pm;
+
+                                        // значения берем из UI полей профиля, если есть; иначе оставляем, что было у профиля
+                                        if ($pm === 'percent') {
+                                            $p->ga1_percent = isset($data['ga_profile_ga1']) ? (float)$data['ga_profile_ga1'] : $p->ga1_percent;
+                                            $p->ga2_percent = isset($data['ga_profile_ga2']) ? (float)$data['ga_profile_ga2'] : $p->ga2_percent;
+                                            $p->ga3_percent = isset($data['ga_profile_ga3']) ? (float)$data['ga_profile_ga3'] : $p->ga3_percent;
+                                            $p->ga4_percent = isset($data['ga_profile_ga4']) ? (float)$data['ga_profile_ga4'] : $p->ga4_percent;
+                                            // cents занулим, чтобы не конфликтовать
+                                            $p->ga1_cents = $p->ga2_cents = $p->ga3_cents = $p->ga4_cents = 0;
+                                        } else {
+                                            $p->ga1_cents = isset($data['ga_profile_ga1']) ? (int)$data['ga_profile_ga1'] : ($p->ga1_cents ?? 0);
+                                            $p->ga2_cents = isset($data['ga_profile_ga2']) ? (int)$data['ga_profile_ga2'] : ($p->ga2_cents ?? 0);
+                                            $p->ga3_cents = isset($data['ga_profile_ga3']) ? (int)$data['ga_profile_ga3'] : ($p->ga3_cents ?? 0);
+                                            $p->ga4_cents = isset($data['ga_profile_ga4']) ? (int)$data['ga_profile_ga4'] : ($p->ga4_cents ?? 0);
+                                            // проценты обнулим
+                                            $p->ga1_percent = $p->ga2_percent = $p->ga3_percent = $p->ga4_percent = null;
+                                        }
+
+                                        $p->save();
+
+                                        // ВАЖНО: проставляем связь на группу
+                                        $data['ga_profile_id'] = $p->id;
+                                    } else {
+                                        // локальный режим: явное зануление связи
+                                        $data['ga_profile_id'] = null;
+                                    }
                                 } else {
-                                    // страховка от мусора
+                                    // защита от мусора в pricing_mode у остальных типов
                                     if (!in_array(($data['pricing_mode'] ?? null), ['absolute', 'percent', 'flat', 'tiered', null], true)) {
                                         $data['pricing_mode'] = null;
                                     }
                                 }
 
-                                unset($data['selector_pricing_mode'], $data['range_pricing_mode']);
+                                // прибираем временные поля, чтобы не пытаться писать их в БД
+                                unset(
+                                    $data['selector_pricing_mode'],
+                                    $data['range_pricing_mode'],
+                                    $data['ga_profile_key'],
+                                    $data['ga_profile_title'],
+                                    $data['ga_profile_pricing_mode'],
+                                    $data['ga_profile_ga1'],
+                                    $data['ga_profile_ga2'],
+                                    $data['ga_profile_ga3'],
+                                    $data['ga_profile_ga4'],
+                                );
+
                                 return $data;
                             })
 
@@ -183,15 +232,69 @@ class ProductForm
                                     $pm = $data['range_pricing_mode'] ?? $data['pricing_mode'] ?? null;
                                     $data['pricing_mode'] = in_array($pm, ['flat', 'tiered'], true) ? $pm : 'flat';
                                 } elseif ($type === \App\Models\OptionGroup::TYPE_UNIQUE_D4) {
+                                    // --- UNIQUE D4: готовим labels (строки, максимум 4)
                                     $labels = $data['unique_d4_labels'] ?? [];
-                                    $labels = array_values(array_slice(array_map(
-                                        fn($v) => trim((string)$v),
-                                        (array) $labels
-                                    ), 0, 4));
-                                    $data['unique_d4_labels'] = $labels;
+                                    $data['unique_d4_labels'] = array_values(array_slice(array_map('strval', (array) $labels), 0, 4));
+
+                                    // --- GLOBAL profile (если включен) -> создаём/обновляем профиль и пишем ga_profile_id
+                                    $isGlobal = (bool) ($data['unique_d4_is_global'] ?? false);
+                                    if ($isGlobal) {
+                                        $key   = trim((string)($data['ga_profile_key'] ?? ''));
+                                        $key   = $key !== '' ? $key : 'unique_d4_default'; // дефолтный ключ
+                                        $title = (string)($data['ga_profile_title'] ?? 'Unique D4 shared pricing');
+                                        $pm    = in_array(($data['ga_profile_pricing_mode'] ?? null), ['absolute', 'percent'], true)
+                                            ? $data['ga_profile_pricing_mode'] : 'absolute';
+
+                                        /** @var \App\Models\GaProfile $p */
+                                        $p = \App\Models\GaProfile::firstOrNew(['key' => $key]);
+                                        $p->title        = $title;
+                                        $p->pricing_mode = $pm;
+
+                                        // значения берем из UI полей профиля, если есть; иначе оставляем, что было у профиля
+                                        if ($pm === 'percent') {
+                                            $p->ga1_percent = isset($data['ga_profile_ga1']) ? (float)$data['ga_profile_ga1'] : $p->ga1_percent;
+                                            $p->ga2_percent = isset($data['ga_profile_ga2']) ? (float)$data['ga_profile_ga2'] : $p->ga2_percent;
+                                            $p->ga3_percent = isset($data['ga_profile_ga3']) ? (float)$data['ga_profile_ga3'] : $p->ga3_percent;
+                                            $p->ga4_percent = isset($data['ga_profile_ga4']) ? (float)$data['ga_profile_ga4'] : $p->ga4_percent;
+                                            // cents занулим, чтобы не конфликтовать
+                                            $p->ga1_cents = $p->ga2_cents = $p->ga3_cents = $p->ga4_cents = 0;
+                                        } else {
+                                            $p->ga1_cents = isset($data['ga_profile_ga1']) ? (int)$data['ga_profile_ga1'] : ($p->ga1_cents ?? 0);
+                                            $p->ga2_cents = isset($data['ga_profile_ga2']) ? (int)$data['ga_profile_ga2'] : ($p->ga2_cents ?? 0);
+                                            $p->ga3_cents = isset($data['ga_profile_ga3']) ? (int)$data['ga_profile_ga3'] : ($p->ga3_cents ?? 0);
+                                            $p->ga4_cents = isset($data['ga_profile_ga4']) ? (int)$data['ga_profile_ga4'] : ($p->ga4_cents ?? 0);
+                                            // проценты обнулим
+                                            $p->ga1_percent = $p->ga2_percent = $p->ga3_percent = $p->ga4_percent = null;
+                                        }
+
+                                        $p->save();
+
+                                        // ВАЖНО: проставляем связь на группу
+                                        $data['ga_profile_id'] = $p->id;
+                                    } else {
+                                        // локальный режим: явное зануление связи
+                                        $data['ga_profile_id'] = null;
+                                    }
+                                } else {
+                                    // защита от мусора в pricing_mode у остальных типов
+                                    if (!in_array(($data['pricing_mode'] ?? null), ['absolute', 'percent', 'flat', 'tiered', null], true)) {
+                                        $data['pricing_mode'] = null;
+                                    }
                                 }
 
-                                unset($data['selector_pricing_mode'], $data['range_pricing_mode']);
+                                // прибираем временные поля, чтобы не пытаться писать их в БД
+                                unset(
+                                    $data['selector_pricing_mode'],
+                                    $data['range_pricing_mode'],
+                                    $data['ga_profile_key'],
+                                    $data['ga_profile_title'],
+                                    $data['ga_profile_pricing_mode'],
+                                    $data['ga_profile_ga1'],
+                                    $data['ga_profile_ga2'],
+                                    $data['ga_profile_ga3'],
+                                    $data['ga_profile_ga4'],
+                                );
+
                                 return $data;
                             })
                             ->schema([
@@ -312,7 +415,7 @@ class ProductForm
                                             ->required(fn($get) => $get('type') === \App\Models\OptionGroup::TYPE_RANGE)
                                             ->reactive()
                                             ->live()
-                                            ->afterStateHydrated(function ($state, $set, $get) {
+                                            ->afterStateHydrated(function ($state, Set $set, Get $get) {
                                                 if ($get('type') === \App\Models\OptionGroup::TYPE_RANGE) {
                                                     $pm = $get('pricing_mode');
                                                     $set('range_pricing_mode', in_array($pm, ['flat', 'tiered'], true) ? $pm : 'flat');
@@ -410,28 +513,98 @@ class ProductForm
                                     ]),
                                 UiGrid::make(12)
                                     ->visible(fn($get) => $get('type') === \App\Models\OptionGroup::TYPE_UNIQUE_D4)
+
                                     ->columnSpanFull()
                                     ->schema([
-
+                                        Hidden::make('ga_profile_id')->dehydrated(false),
                                         // Scope: Global / Local
                                         \Filament\Forms\Components\Toggle::make('unique_d4_is_global')
                                             ->label('Scope: Global (shared across products)')
-                                            ->helperText('Если включено — цены и режим берутся из выбранного/создаваемого профиля и шарятся всеми продуктами с флагом Global.')
                                             ->reactive()
+                                            ->afterStateHydrated(function ($state, Set $set, Get $get) {
+                                                // ⬇︎ как у тебя сейчас
+                                                if (! $state) {
+                                                    $set('ga_profile_key', 'unique_d4_default');
+                                                    $set('ga_profile_title', 'Unique D4 shared pricing');
+                                                    $set('ga_profile_pricing_mode', 'absolute');
+                                                    $set('ga_profile_ga1', 0);
+                                                    $set('ga_profile_ga2', 0);
+                                                    $set('ga_profile_ga3', 0);
+                                                    $set('ga_profile_ga4', 0);
+                                                    return;
+                                                }
+                                                $pid = $get('ga_profile_id');
+                                                $p = $pid ? \App\Models\GaProfile::find($pid) : null;
+
+                                                $set('ga_profile_key', $p->key ?? 'unique_d4_default');
+                                                $set('ga_profile_title', $p->title ?? 'Unique D4 shared pricing');
+
+                                                $pm = in_array($p?->pricing_mode, ['absolute', 'percent'], true) ? $p->pricing_mode : 'absolute';
+                                                $set('ga_profile_pricing_mode', $pm);
+
+                                                if ($pm === 'percent') {
+                                                    $set('ga_profile_ga1', $p->ga1_percent ?? 0);
+                                                    $set('ga_profile_ga2', $p->ga2_percent ?? 0);
+                                                    $set('ga_profile_ga3', $p->ga3_percent ?? 0);
+                                                    $set('ga_profile_ga4', $p->ga4_percent ?? 0);
+                                                } else {
+                                                    $set('ga_profile_ga1', $p->ga1_cents ?? 0);
+                                                    $set('ga_profile_ga2', $p->ga2_cents ?? 0);
+                                                    $set('ga_profile_ga3', $p->ga3_cents ?? 0);
+                                                    $set('ga_profile_ga4', $p->ga4_cents ?? 0);
+                                                }
+                                            })
+                                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                                // ⬇︎ тот же код, чтобы поле заполнялось при клике по тумблеру
+                                                if (! $state) {
+                                                    $set('ga_profile_key', 'unique_d4_default');
+                                                    $set('ga_profile_title', 'Unique D4 shared pricing');
+                                                    $set('ga_profile_pricing_mode', 'absolute');
+                                                    $set('ga_profile_ga1', 0);
+                                                    $set('ga_profile_ga2', 0);
+                                                    $set('ga_profile_ga3', 0);
+                                                    $set('ga_profile_ga4', 0);
+                                                    return;
+                                                }
+                                                $pid = $get('ga_profile_id');
+                                                $p = $pid ? \App\Models\GaProfile::find($pid) : null;
+
+                                                $set('ga_profile_key', $p->key ?? 'unique_d4_default');
+                                                $set('ga_profile_title', $p->title ?? 'Unique D4 shared pricing');
+
+                                                $pm = in_array($p?->pricing_mode, ['absolute', 'percent'], true) ? $p->pricing_mode : 'absolute';
+                                                $set('ga_profile_pricing_mode', $pm);
+
+                                                if ($pm === 'percent') {
+                                                    $set('ga_profile_ga1', $p->ga1_percent ?? 0);
+                                                    $set('ga_profile_ga2', $p->ga2_percent ?? 0);
+                                                    $set('ga_profile_ga3', $p->ga3_percent ?? 0);
+                                                    $set('ga_profile_ga4', $p->ga4_percent ?? 0);
+                                                } else {
+                                                    $set('ga_profile_ga1', $p->ga1_cents ?? 0);
+                                                    $set('ga_profile_ga2', $p->ga2_cents ?? 0);
+                                                    $set('ga_profile_ga3', $p->ga3_cents ?? 0);
+                                                    $set('ga_profile_ga4', $p->ga4_cents ?? 0);
+                                                }
+                                            })
                                             ->columnSpan(12),
 
                                         // Профиль GA (ключ + title) — будем upsert-ить в ga_profiles
                                         \Filament\Forms\Components\TextInput::make('ga_profile_key')
                                             ->label('GA Profile key (for Global)')
-                                            ->placeholder('unique_d4_default')
-                                            ->visible(fn($get) => (bool)$get('unique_d4_is_global'))
+                                            ->default('unique_d4_default')
+                                            ->disabled()
+                                            ->dehydrated() // явно true
+                                            ->visible(fn($get) => (bool) $get('unique_d4_is_global'))
                                             ->maxLength(64)
                                             ->columnSpan(4),
 
                                         \Filament\Forms\Components\TextInput::make('ga_profile_title')
                                             ->label('GA Profile title')
-                                            ->placeholder('Unique D4 shared pricing')
-                                            ->visible(fn($get) => (bool)$get('unique_d4_is_global'))
+                                            ->default('Unique D4 shared pricing')
+                                            ->disabled()
+                                            ->dehydrated()
+                                            ->visible(fn($get) => (bool) $get('unique_d4_is_global'))
                                             ->maxLength(128)
                                             ->columnSpan(4),
 
@@ -439,27 +612,44 @@ class ProductForm
                                             ->label('Pricing mode (Global)')
                                             ->options(['absolute' => 'Absolute (+N cents)', 'percent' => 'Percent (+N%)'])
                                             ->default('absolute')
-                                            ->visible(fn($get) => (bool)$get('unique_d4_is_global'))
+                                            ->visible(fn($get) => (bool) $get('unique_d4_is_global'))
                                             ->reactive()
+                                            ->dehydrated()
                                             ->columnSpan(4),
 
-                                        // Global — цены (жёстко 1..4 GA)
+                                        // Цены 1..4 GA — оставь как есть, но гарантируем дефолты и dehydration
                                         \Filament\Forms\Components\TextInput::make('ga_profile_ga1')
                                             ->label('1 GA')
                                             ->numeric()
+                                            ->default(0)
+                                            ->dehydrated()
+                                            ->rule(fn($get) => ($get('ga_profile_pricing_mode') ?? 'absolute') === 'percent' ? 'decimal:0,3' : 'integer')
+                                            ->visible(fn($get) => (bool) $get('unique_d4_is_global'))
+                                            ->columnSpan(3),
+                                        \Filament\Forms\Components\TextInput::make('ga_profile_ga2')
+                                            ->label('2 GA')
+                                            ->numeric()
+                                            ->dehydrated()
                                             ->rule(fn($get) => ($get('ga_profile_pricing_mode') ?? 'absolute') === 'percent' ? 'decimal:0,3' : 'integer')
                                             ->default(0)
                                             ->visible(fn($get) => (bool)$get('unique_d4_is_global'))
                                             ->columnSpan(3),
-                                        \Filament\Forms\Components\TextInput::make('ga_profile_ga2')->label('2 GA')->numeric()
+                                        \Filament\Forms\Components\TextInput::make('ga_profile_ga3')
+                                            ->label('3 GA')
+                                            ->numeric()
+                                            ->dehydrated()
                                             ->rule(fn($get) => ($get('ga_profile_pricing_mode') ?? 'absolute') === 'percent' ? 'decimal:0,3' : 'integer')
-                                            ->default(0)->visible(fn($get) => (bool)$get('unique_d4_is_global'))->columnSpan(3),
-                                        \Filament\Forms\Components\TextInput::make('ga_profile_ga3')->label('3 GA')->numeric()
+                                            ->default(0)
+                                            ->visible(fn($get) => (bool)$get('unique_d4_is_global'))
+                                            ->columnSpan(3),
+                                        \Filament\Forms\Components\TextInput::make('ga_profile_ga4')
+                                            ->label('4 GA')
+                                            ->numeric()
+                                            ->dehydrated()
                                             ->rule(fn($get) => ($get('ga_profile_pricing_mode') ?? 'absolute') === 'percent' ? 'decimal:0,3' : 'integer')
-                                            ->default(0)->visible(fn($get) => (bool)$get('unique_d4_is_global'))->columnSpan(3),
-                                        \Filament\Forms\Components\TextInput::make('ga_profile_ga4')->label('4 GA')->numeric()
-                                            ->rule(fn($get) => ($get('ga_profile_pricing_mode') ?? 'absolute') === 'percent' ? 'decimal:0,3' : 'integer')
-                                            ->default(0)->visible(fn($get) => (bool)$get('unique_d4_is_global'))->columnSpan(3),
+                                            ->default(0)
+                                            ->visible(fn($get) => (bool)$get('unique_d4_is_global'))
+                                            ->columnSpan(3),
 
                                         // Local — режим/цены
                                         \Filament\Forms\Components\Select::make('unique_d4_pricing_mode')
@@ -510,7 +700,7 @@ class ProductForm
                                                 \Filament\Forms\Components\TextInput::make('unique_d4_labels.2')->label('Label #3')->maxLength(96),
                                                 \Filament\Forms\Components\TextInput::make('unique_d4_labels.3')->label('Label #4')->maxLength(96),
                                             ])
-                                            
+
                                             ->columnSpan(12),
                                     ]),
 
@@ -534,7 +724,7 @@ class ProductForm
                                     ->columns(12)
 
                                     // ⬇️ ВСЯ запись значений — только тут
-                                    ->mutateRelationshipDataBeforeCreateUsing(function (array $data, callable $get) {
+                                    ->mutateRelationshipDataBeforeCreateUsing(function (array $data, Get $get) {
                                         $type = $get('../../type');
                                         if ($type !== OptionGroup::TYPE_SELECTOR) return $data; // legacy не трогаем
 
@@ -551,7 +741,7 @@ class ProductForm
                                         }
                                         return $data;
                                     })
-                                    ->mutateRelationshipDataBeforeSaveUsing(function (array $data, callable $get) {
+                                    ->mutateRelationshipDataBeforeSaveUsing(function (array $data, Get $get) {
                                         $type = $get('../../type');
                                         if ($type !== OptionGroup::TYPE_SELECTOR) return $data;
 
