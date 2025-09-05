@@ -7,11 +7,10 @@ import { resolveGroupComponent } from '@/Components/product/groups/registry'
 import { useProductOptions } from '@/composables/useProductOptions'
 import { usePricing } from '@/composables/usePricing'
 import type { Game, Category } from '@/types'
-import type { ProductWithGroups } from '@/types/product-options'
+import type { ProductWithGroups, SelectorGroup, OptionItem } from '@/types/product-options'
 import { ref, computed, onMounted } from 'vue'
 import RareItemBuilder from '@/Components/product/RareItemBuilder.vue'
-import type { SelectorGroup } from '@/types/product-options'
-
+import UniqueD4Builder from '@/Components/product/UniqueD4Builder.vue'
 
 const props = defineProps<{
   game: Game
@@ -23,39 +22,65 @@ const { selectionByGroup, qtyGroup, buildAddToCartPayload } = useProductOptions(
 const { unitCents, totalCents } = usePricing(props.product, selectionByGroup)
 const { loadSummary } = useCartSummary()
 
+// только selector-группы
 const groups = computed(() => (props.product.option_groups ?? []).filter(g => g.type === 'selector') as SelectorGroup[])
 
 function byCodeOrTitle(code: string, rx: RegExp): SelectorGroup | undefined {
   return groups.value.find(g => (g as any).code === code)
     ?? groups.value.find(g => rx.test((g.title || '').toLowerCase()))
 }
+function byCode(code: string) {
+  return groups.value.find(g => (g as any).code === code)
+}
 
-const gaGroup = computed(() => byCodeOrTitle('ga', /\b(ga|greater)\b/))
+/* ============================
+   UNIQUE D4 (ga + 4 чекбокса)
+============================ */
+const statsGroupD4 = computed(() => byCode('unique_d4_stats'))
+// Если есть stats-группа — считаем ближайший 'ga' как D4-ёшный
+const gaGroupD4 = computed(() => statsGroupD4.value ? byCode('ga') : undefined)
+
+const gaModel = computed<number | null>({
+  get: () => gaGroupD4.value ? (selectionByGroup.value as any)[gaGroupD4.value.id] ?? null : null,
+  set: v => { if (gaGroupD4.value) (selectionByGroup.value as any)[gaGroupD4.value.id] = v }
+})
+
+const statsModel = computed<number[]>({
+  get: () => {
+    const g = statsGroupD4.value; if (!g) return []
+    const raw = (selectionByGroup.value as any)[g.id]
+    if (Array.isArray(raw)) return raw
+    if (typeof raw === 'number' && Number.isFinite(raw)) return [raw]
+    return []
+  },
+  set: v => { if (statsGroupD4.value) (selectionByGroup.value as any)[statsGroupD4.value.id] = Array.isArray(v) ? v : [] }
+})
+
+/* ============================
+   RARE BUILDER (class/slot/affix)
+============================ */
+const classGroup = computed(() => byCodeOrTitle('class', /class|класс/))
+const slotGroup = computed(() => byCodeOrTitle('slot', /slot|слот|предмет/))
+const affixGroup = computed(() => byCodeOrTitle('affix', /affix|аффикс|характеристик/))
+
+// для редкой логики GA используем 'ga' только если НЕ включён D4
+const gaGroupRare = computed(() => !statsGroupD4.value ? byCodeOrTitle('ga', /\b(ga|greater)\b/) : undefined)
 
 function clamp(n: number, min = 0, max = 3) {
   const x = Number(n)
   return Math.min(max, Math.max(min, Number.isFinite(x) ? x : 0))
 }
-
 const gaLimit = computed<number>(() => {
-  const g = gaGroup.value
+  const g = gaGroupRare.value
   if (!g) return 0
   const raw = (selectionByGroup.value as any)[g.id]
   const selectedId = Array.isArray(raw) ? raw[0] : raw
   const opt = g.values?.find(v => v.id === selectedId)
-
-  // 1) meta.ga_count
   const fromMeta = Number((opt as any)?.meta?.ga_count)
   if (Number.isFinite(fromMeta)) return clamp(fromMeta)
-
-  // 2) из title вида "2GA" / "2 GA" / "GA x2"
   const m = String(opt?.title ?? '').match(/(\d)/)
   return clamp(m ? Number(m[1]) : 0)
 })
-
-const classGroup = computed(() => byCodeOrTitle('class', /class|класс/))
-const slotGroup = computed(() => byCodeOrTitle('slot', /slot|слот|предмет/))
-const affixGroup = computed(() => byCodeOrTitle('affix', /affix|аффикс|характеристик/))
 
 // КЛАСС — всегда number|null
 const classModel = computed<number | null>({
@@ -71,21 +96,6 @@ const classModel = computed<number | null>({
     if (!g) return
       ; (selectionByGroup.value as any)[g.id] = v == null ? null : Number(v)
   },
-})
-
-const bundleCents = computed(() => {
-  const groups = (props.product.option_groups ?? []).filter((g: any) => g.type === 'bundle')
-  let sum = 0
-  for (const g of groups) {
-    const sel = (selectionByGroup.value as any)[g.id]
-    if (!Array.isArray(sel) || !sel.length) continue
-    for (const row of sel) {
-      const it = g.items?.find((i: any) => i.product_id === row.product_id)
-      if (!it) continue
-      sum += (it.price_cents || 0) * (Number(row.qty) || 0)
-    }
-  }
-  return sum
 })
 
 // СЛОТ — всегда number|null
@@ -104,8 +114,7 @@ const slotModel = computed<number | null>({
   },
 })
 
-
-// АФФИКСЫ — всегда массив number[]
+// АФФИКСЫ — всегда number[]
 const affixModel = computed<number[]>({
   get: () => {
     const g = affixGroup.value
@@ -123,7 +132,6 @@ const affixModel = computed<number[]>({
   },
 })
 
-
 const affixGaModel = computed<number[]>({
   get: () => (selectionByGroup.value as any)._affix_ga_ids ?? [],
   set: (ids) => {
@@ -133,6 +141,7 @@ const affixGaModel = computed<number[]>({
   },
 })
 
+// нормализация при маунте, как у тебя
 onMounted(() => {
   const cg = classGroup.value
   if (cg) {
@@ -157,29 +166,47 @@ onMounted(() => {
   }
 })
 
-
-// Какие группы скрыть из “обычного” рендера
+/* ============================
+   Скрываем служебные группы
+============================ */
 const rareIds = computed(() => new Set(
   [classGroup.value?.id, slotGroup.value?.id, affixGroup.value?.id].filter(Boolean) as number[]
 ))
-
-
-
+const d4Ids = computed(() => new Set(
+  [gaGroupD4.value?.id, statsGroupD4.value?.id].filter(Boolean) as number[]
+))
+const hiddenIds = computed(() => {
+  const set = new Set<number>()
+  for (const id of rareIds.value) set.add(id)
+  for (const id of d4Ids.value) set.add(id)
+  return set
+})
 const otherGroups = computed(() =>
-  (props.product.option_groups ?? []).filter(g => !rareIds.value.has(g.id))
+  (props.product.option_groups ?? []).filter(g => !hiddenIds.value.has(g.id))
 )
 
+/* ============================
+   cart & pricing
+============================ */
+const bundleCents = computed(() => {
+  const groups = (props.product.option_groups ?? []).filter((g: any) => g.type === 'bundle')
+  let sum = 0
+  for (const g of groups) {
+    const sel = (selectionByGroup.value as any)[g.id]
+    if (!Array.isArray(sel) || !sel.length) continue
+    for (const row of sel) {
+      const it = g.items?.find((i: any) => i.product_id === row.product_id)
+      if (!it) continue
+      sum += (it.price_cents || 0) * (Number(row.qty) || 0)
+    }
+  }
+  return sum
+})
 
-
-
-// --- state for UX ---
 const submitting = ref(false)
 const errors = ref<string[]>([])
-
-// показывать подсветку required только после попытки добавить
 const triedToSubmit = ref(false)
 
-// required-группы, которые не заполнены
 const missingRequiredIds = computed<number[]>(() => {
   return (props.product.option_groups ?? [])
     .filter((g: any) => {
@@ -196,7 +223,6 @@ const canAddToCart = computed(() => missingRequiredIds.value.length === 0)
 function formatPrice(cents: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((cents || 0) / 100)
 }
-
 const displayCents = computed(() => (qtyGroup ? unitCents.value : totalCents.value) + bundleCents.value)
 
 async function addToCart() {
@@ -211,10 +237,8 @@ async function addToCart() {
   if (submitting.value) return
   submitting.value = true
   try {
-    // 1) найдём все bundle-группы
+    // 1) bundle-товары — отдельно
     const bundleGroups = (props.product.option_groups ?? []).filter((g: any) => g.type === 'bundle')
-
-    // 2) соберём выбранные строки из selectionByGroup
     const bundleRows: Array<{ product_id: number; qty: number }> = []
     for (const g of bundleGroups) {
       const sel = (selectionByGroup.value as any)[g.id]
@@ -226,27 +250,30 @@ async function addToCart() {
         }
       }
     }
-
-    // 3A) если есть bundle-строки — отправим их по одной (простой путь)
     if (bundleRows.length) {
       for (const row of bundleRows) {
-        await axios.post('/cart/add', {
-          product_id: row.product_id,
-          qty: row.qty,
-        })
+        await axios.post('/cart/add', { product_id: row.product_id, qty: row.qty })
       }
       await loadSummary()
       return
     }
 
-    // 3B) иначе — обычное добавление текущего продукта (как было)
+    // 2) обычный товар
     const payload = buildAddToCartPayload()
-    payload.affix_ga_ids = affixGaModel.value ?? []
+
+
+    const hasD4 = !!statsGroupD4.value
+    if (hasD4) {
+      // D4: не отправляем affix_ga_ids — сервер читает выбор из selection[unique_d4_stats]
+      delete (payload as any).affix_ga_ids
+    } else {
+      // Rare: отправляем только отмеченные как GA аффиксы
+      payload.affix_ga_ids = affixGaModel.value ?? []
+    }
     const { data } = await axios.post('/cart/add', payload)
     if (data && data.summary) cartSummary.value = data.summary
     else await loadSummary()
   } catch (e: any) {
-    // твоя обработка ошибок
     errors.value.push(e?.response?.data?.message || 'Failed to add to cart')
   } finally {
     submitting.value = false
@@ -260,7 +287,7 @@ async function addToCart() {
       <Breadcrumbs :game="game" :category="category" :product="product" />
 
       <!-- error banner -->
-      <div v-if="errors.length" class="my-4 rounded-md border border-red-400  text-red-700 p-3">
+      <div v-if="errors.length" class="my-4 rounded-md border border-red-400 text-red-700 p-3">
         <ul class="list-disc pl-5">
           <li v-for="(err, i) in errors" :key="i">{{ err }}</li>
         </ul>
@@ -285,24 +312,17 @@ async function addToCart() {
             </template>
           </div>
 
-
+          <!-- UNIQUE D4 BUILDER -->
+          <UniqueD4Builder v-if="gaGroupD4 && statsGroupD4" :ga-group="gaGroupD4" :stats-group="statsGroupD4"
+            v-model:ga-selected="gaModel" v-model:stats-selected="statsModel" />
 
           <!-- RARE BUILDER -->
-          <RareItemBuilder
-            v-if="classGroup && slotGroup && affixGroup"
-            :class-group="classGroup"
-            :slot-group="slotGroup"
-            :affix-group="affixGroup"
-            :currency="'USD'"
-            :ga-limit="gaLimit"   
-            v-model:class-id="classModel"
-            v-model:slot-id="slotModel"
-            v-model:affix-ids="affixModel"
-            v-model:affix-ga-ids="affixGaModel"
-          />
+          <RareItemBuilder v-if="classGroup && slotGroup && affixGroup" :class-group="classGroup"
+            :slot-group="slotGroup" :affix-group="affixGroup" :currency="'USD'" :ga-limit="gaLimit"
+            v-model:class-id="classModel" v-model:slot-id="slotModel" v-model:affix-ids="affixModel"
+            v-model:affix-ga-ids="affixGaModel" />
 
-          <!-- Остальные группы (кроме class/slot/affix) -->
-
+          <!-- Остальные группы (кроме служебных rare + D4) -->
           <div v-if="otherGroups.length" class="mt-4 space-y-6">
             <div v-for="group in otherGroups" :key="group.id" class="border rounded-lg p-3"
               :class="triedToSubmit && missingRequiredSet.has(group.id) ? 'border-red-400' : 'border-border'">
@@ -314,14 +334,12 @@ async function addToCart() {
             </div>
           </div>
 
-          <!-- Кнопка — вне условного блока конструктора -->
+          <!-- Кнопка -->
           <button class="mt-5 px-4 py-2 rounded-lg bg-primary text-primary-foreground" @click.prevent="addToCart">
             {{ submitting ? 'Adding…' : 'Add to cart' }}
           </button>
-
         </div>
-      </div> <!-- правая колонка -->
-
+      </div>
     </section>
   </DefaultLayout>
 </template>

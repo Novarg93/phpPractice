@@ -1,7 +1,5 @@
 <?php
 
-
-
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -19,18 +17,20 @@ class OptionValue extends Model
         'position',
         'delta_cents',
         'delta_percent',
-        'allow_class_value_ids',   // 👈 добавь
+        'allow_class_value_ids',
         'allow_slot_value_ids',
+        'meta', // 👈 важно
     ];
 
     protected $casts = [
-        'is_active'   => 'bool',
-        'is_default'  => 'bool',
-        'value_percent' => 'float',
-        'delta_cents' => 'integer',
-        'delta_percent' => 'float',
+        'is_active'             => 'bool',
+        'is_default'            => 'bool',
+        'value_percent'         => 'float',
+        'delta_cents'           => 'integer',
+        'delta_percent'         => 'float',
         'allow_class_value_ids' => 'array',
         'allow_slot_value_ids'  => 'array',
+        'meta'                  => 'array', // 👈 важно
     ];
 
     public function group(): BelongsTo
@@ -41,13 +41,11 @@ class OptionValue extends Model
     protected static function booted()
     {
         static::saving(function (OptionValue $value) {
-
             if ($value->is_default) {
                 $group = $value->group()->first();
                 if ($group && $group->type === OptionGroup::TYPE_RADIO) {
-
                     static::where('option_group_id', $value->option_group_id)
-                        ->when($value->exists, fn($q) => $q->where('id', '!=', $value->id))
+                        ->when($value->exists, fn ($q) => $q->where('id', '!=', $value->id))
                         ->update(['is_default' => false]);
                 }
             }

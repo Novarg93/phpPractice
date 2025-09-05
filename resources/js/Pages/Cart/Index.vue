@@ -37,7 +37,7 @@ type ItemOption = {
     scope: 'unit' | 'total'
     value_cents?: number | null
     value_percent?: number | null
-     is_ga?: boolean
+    is_ga?: boolean
 }
 
 const props = defineProps<{
@@ -57,6 +57,12 @@ function formatPrice(cents: number) {
 function recalc() {
     totalQty.value = items.value.reduce((sum, i) => sum + i.qty, 0)
     totalSum.value = items.value.reduce((sum, i) => sum + i.line_total_cents, 0)
+}
+
+function showOptPrice(opt: ItemOption) {
+    return opt.calc_mode === 'percent'
+        ? (opt.value_percent ?? 0) !== 0
+        : (opt.value_cents ?? 0) !== 0
 }
 
 async function updateQty(item: CartItem, newQty: number) {
@@ -113,19 +119,19 @@ async function removeItem(item: CartItem) {
                             <ul class="list-disc pl-5 space-y-0.5">
                                 <li v-for="opt in item.options" :key="opt.id">
                                     <span v-if="opt.is_ga"
-                        class="text-[10px] mr-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
-                        GA
-                      </span>
+                                        class="text-[10px] mr-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
+                                        GA
+                                    </span>
                                     <span class="font-medium">{{ opt.title }}</span>
-                                    
-                                    <span class="ml-1">
+
+                                    <span v-if="showOptPrice(opt)" class="ml-1">
                                         (
                                         <template v-if="opt.calc_mode === 'percent'">
                                             +{{ opt.value_percent ?? 0 }}% {{ opt.scope }}
                                         </template>
                                         <template v-else>
                                             {{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(opt.value_cents
-                                                ?? 0) }} {{ opt.scope }}
+                                            ?? 0) }} {{ opt.scope }}
                                         </template>
                                         )
                                     </span>

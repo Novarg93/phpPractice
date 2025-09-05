@@ -74,6 +74,7 @@ class ProductController extends Controller
                                     // ✅ уже int[]
                                     'allow_class_value_ids' => $allowClass,
                                     'allow_slot_value_ids'  => $allowSlot,
+                                    'meta'          => (array) ($v->meta ?? []),
                                 ];
                             })->values(),
                         ]);

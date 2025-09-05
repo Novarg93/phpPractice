@@ -243,68 +243,85 @@ class CartController extends Controller
     public function add(Request $request)
     {
         $data = $request->validate([
-            'product_id'                  => ['required', 'integer', 'exists:products,id'],
-            'qty'                         => ['nullable', 'integer', 'min:1'],
-            'option_value_ids'            => ['array'],
-            'option_value_ids.*'          => ['integer', 'exists:option_values,id'],
-            'range_options'               => ['array'],
+            'product_id'                      => ['required', 'integer', 'exists:products,id'],
+            'qty'                             => ['nullable', 'integer', 'min:1'],
+            'option_value_ids'                => ['array'],
+            'option_value_ids.*'              => ['integer', 'exists:option_values,id'],
+            'range_options'                   => ['array'],
             'range_options.*.option_group_id' => ['required', 'integer', 'exists:option_groups,id'],
             'range_options.*.selected_min'    => ['required', 'integer'],
             'range_options.*.selected_max'    => ['required', 'integer'],
-            'affix_ga_ids'                => ['array'],
-            'affix_ga_ids.*'              => ['integer', 'exists:option_values,id'],
+            'affix_ga_ids'                    => ['array'],
+            'affix_ga_ids.*'                  => ['integer', 'exists:option_values,id'],
         ]);
 
+        // 1) нормализуем выбор
         $optionIds = $this->normalizeOptionIds($data['option_value_ids'] ?? []);
         $this->pricing->validateSelection($data['product_id'], $optionIds);
 
+        // 2) грузим продукт и группы ОДИН раз (раньше!)
+        $product = $this->pricing->productWithGroups($data['product_id']);
+
+        // 3) определяем D4 (есть ли служебная группа со статами)
+        $d4StatsGroup = optional($product->optionGroups)
+            ->firstWhere(fn($g) => ($g->code ?? null) === 'unique_d4_stats');
+        $d4StatIds = collect($d4StatsGroup?->values ?? [])
+            ->pluck('id')->map(fn($v) => (int)$v)->all();
+
+        // 4) валидируем диапазоны/qty
         $rangeList = $this->pricing->validateRangeSelections($data['product_id'], $data['range_options'] ?? []);
         $qty       = $this->pricing->validateAndResolveQty($data['product_id'], $data['qty'] ?? null);
 
+        // 5) формируем набор GA
         $affixGaIds = collect($data['affix_ga_ids'] ?? [])
             ->map(fn($v) => (int)$v)
             ->unique()
             ->values();
 
+        // Если это D4 — игнорируем входной affix_ga_ids и считаем GA как выбранные статы
+        if ($d4StatsGroup) {
+            $affixGaIds = collect($optionIds)
+                ->filter(fn($id) => in_array($id, $d4StatIds, true))
+                ->values();
+        }
+
         // --- PRE-VALIDATE GA
-        $product = $this->pricing->productWithGroups($data['product_id']);
+        if (!$d4StatsGroup) {
+            // RARE-ветка: проверяем, что все GA входят в выбранные аффиксы, и лимит 0..3
+            $affixGroup = optional($product->optionGroups)->firstWhere(function ($g) {
+                $t = mb_strtolower((string)($g->title ?? ''));
+                $c = mb_strtolower((string)($g->code ?? ''));
+                return $c === 'affix' || str_contains($t, 'affix') || str_contains($t, 'аффикс') || str_contains($t, 'характеристик');
+            });
 
-        // Найдём affix-группу и проверим, что все GA входят в выбранные аффиксы
-        $affixGroup = optional($product->optionGroups)->firstWhere(function ($g) {
-            $t = mb_strtolower((string)($g->title ?? ''));
-            $c = mb_strtolower((string)($g->code ?? ''));
-            return $c === 'affix' || str_contains($t, 'affix') || str_contains($t, 'аффикс') || str_contains($t, 'характеристик');
-        });
+            $allowedAffixIds = collect($affixGroup?->values ?? [])->pluck('id')->map(fn($v) => (int)$v)->all();
+            $invalidGa = $affixGaIds->reject(fn($vid) => in_array($vid, $optionIds, true) && in_array($vid, $allowedAffixIds, true));
+            abort_if($invalidGa->isNotEmpty(), 422, 'Invalid GA selection.');
 
-        $allowedAffixIds = collect($affixGroup?->values ?? [])->pluck('id')->map(fn($v) => (int)$v)->all();
-        $invalidGa = $affixGaIds->reject(fn($vid) => in_array($vid, $optionIds, true) && in_array($vid, $allowedAffixIds, true));
-        abort_if($invalidGa->isNotEmpty(), 422, 'Invalid GA selection.');
-
-        // Жёстко контролируем лимит по GA single-selector (если он есть)
-        $gaGroup = optional($product->optionGroups)->firstWhere(
-            fn($g) =>
-            mb_strtolower((string)($g->code ?? '')) === 'ga'
-                || (bool)preg_match('/\b(ga|greater)\b/i', (string)($g->title ?? ''))
-        );
-
-        if ($gaGroup) {
-            $selectedGaValueId = collect($gaGroup->values ?? [])->pluck('id')->intersect($optionIds)->first();
+            $gaGroup = optional($product->optionGroups)->firstWhere(
+                fn($g) => mb_strtolower((string)($g->code ?? '')) === 'ga'
+                    || (bool)preg_match('/\b(ga|greater)\b/i', (string)($g->title ?? ''))
+            );
+            if ($gaGroup) {
+                $selectedGaValueId = collect($gaGroup->values ?? [])->pluck('id')->intersect($optionIds)->first();
+                if ($selectedGaValueId) {
+                    $gaValue = collect($gaGroup->values)->firstWhere('id', $selectedGaValueId);
+                    $raw = data_get($gaValue->meta ?? [], 'ga_count');
+                    $limit = is_numeric($raw) ? (int)$raw : (preg_match('/(\d+)/', (string)($gaValue->title ?? ''), $m) ? (int)$m[1] : 0);
+                    $limit = max(0, min(3, $limit)); // RARE: максимум 3
+                    abort_if($affixGaIds->count() > $limit, 422, 'GA count exceeds selected limit.');
+                }
+            }
+        } else {
+            // D4-ветка: проверяем только лимит 0..4 по выбранным статам
+            $gaGroup = optional($product->optionGroups)->firstWhere(fn($g) => ($g->code ?? null) === 'ga');
+            $selectedGaValueId = collect($gaGroup?->values ?? [])->pluck('id')->intersect($optionIds)->first();
             if ($selectedGaValueId) {
                 $gaValue = collect($gaGroup->values)->firstWhere('id', $selectedGaValueId);
-
-                // 1) meta.ga_count
-                $limit = null;
-                $raw = $gaValue->meta['ga_count'] ?? null;
-                if (is_numeric($raw)) {
-                    $limit = (int)$raw;
-                } else {
-                    // 2) fallback: цифра в title (например "2 GA")
-                    if (preg_match('/(\d+)/', (string)($gaValue->title ?? ''), $m)) {
-                        $limit = (int)$m[1];
-                    }
-                }
-                $limit = max(0, min(3, (int)($limit ?? 0)));
-                abort_if($affixGaIds->count() > $limit, 422, 'GA count exceeds selected limit.');
+                $limit = (int)(data_get($gaValue->meta ?? [], 'ga_count') ?? 0);
+                $limit = max(0, min(4, $limit)); // D4: максимум 4
+                $selectedStatsCount = collect($optionIds)->intersect($d4StatIds)->count();
+                abort_if($selectedStatsCount > $limit, 422, 'GA count exceeds selected limit.');
             }
         }
         // --- END PRE-VALIDATE GA

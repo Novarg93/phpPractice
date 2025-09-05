@@ -11,9 +11,10 @@ const props = defineProps<{
     nickname?: string | null; needs_nickname: boolean; shipping_address: any
     items: Array<{
       product_name: string; qty: number; unit_price_cents: number; line_total_cents: number
-      image_url?: string; options?: Array<{ id: number; title: string; calc_mode: 'absolute' | 'percent'; scope: 'unit' | 'total'; value_cents?: number | null; value_percent?: number | null }>
+      image_url?: string; options?: Array<{ id: number; title: string; calc_mode: 'absolute' | 'percent'; scope: 'unit' | 'total'; value_cents?: number | null; value_percent?: number | null; is_ga?: boolean;  }>
       ranges?: Array<{ title: string; label: string }>; has_qty_slider?: boolean
     }>
+    
   }
 }>()
 
@@ -23,6 +24,12 @@ function formatPrice(cents: number) {
 
 function retryPay(orderId: number) {
   router.post(route('orders.pay', orderId))
+}
+
+function showOptPrice(opt: { calc_mode: 'absolute' | 'percent'; value_cents?: number | null; value_percent?: number | null }) {
+  return opt.calc_mode === 'percent'
+    ? (opt.value_percent ?? 0) !== 0
+    : (opt.value_cents ?? 0) !== 0
 }
 </script>
 
@@ -55,17 +62,16 @@ function retryPay(orderId: number) {
                       </span>
                       <span class="font-medium">{{ opt.title }}</span>
                       
-                      <span class="ml-1">
-                        (
-                        <template v-if="opt.calc_mode === 'percent'">
-                          +{{ opt.value_percent ?? 0 }}% {{ opt.scope }}
-                        </template>
-                        <template v-else>
-                          {{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(opt.value_cents ?? 0) }} {{
-                            opt.scope }}
-                        </template>
-                        )
-                      </span>
+                      <span v-if="showOptPrice(opt)" class="ml-1">
+    (
+    <template v-if="opt.calc_mode === 'percent'">
+      +{{ opt.value_percent ?? 0 }}% {{ opt.scope }}
+    </template>
+    <template v-else>
+      {{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(opt.value_cents ?? 0) }} {{ opt.scope }}
+    </template>
+    )
+  </span>
                     </li>
                   </ul>
                 </div>

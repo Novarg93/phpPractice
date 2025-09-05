@@ -20,6 +20,7 @@ type ItemOption = {
     scope: "unit" | "total";
     value_cents?: number | null;
     value_percent?: number | null;
+    is_ga?: boolean;
 };
 
 type Item = {
@@ -53,6 +54,12 @@ function formatPrice(cents: number) {
         style: "currency",
         currency: props.totals.currency,
     }).format(cents / 100);
+}
+
+function showOptPrice(opt: ItemOption) {
+    return opt.calc_mode === 'percent'
+        ? (opt.value_percent ?? 0) !== 0
+        : (opt.value_cents ?? 0) !== 0
 }
 
 
@@ -124,35 +131,21 @@ async function goToStripe() {
                                     <ul class="list-disc pl-5 space-y-0.5">
                                         <li v-for="opt in i.options" :key="opt.id">
                                             <span v-if="opt.is_ga"
-                        class="text-[10px] mr-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
-                        GA
-                      </span>
+                                                class="text-[10px] mr-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
+                                                GA
+                                            </span>
                                             <span class="font-medium">{{
                                                 opt.title
-                                            }}</span>
-                                            
-                                            <span class="ml-1">
+                                                }}</span>
+
+                                            <span v-if="showOptPrice(opt)" class="ml-1">
                                                 (
-                                                <template v-if="
-                                                    opt.calc_mode ===
-                                                    'percent'
-                                                ">
-                                                    +{{
-                                                        opt.value_percent ?? 0
-                                                    }}% {{ opt.scope }}
+                                                <template v-if="opt.calc_mode === 'percent'">
+                                                    +{{ opt.value_percent ?? 0 }}% {{ opt.scope }}
                                                 </template>
                                                 <template v-else>
-                                                    {{
-                                                        (opt.value_cents ??
-                                                            0) >= 0
-                                                            ? "+"
-                                                            : ""
-                                                    }}{{
-                                                        formatPrice(
-                                                            opt.value_cents ?? 0
-                                                        )
-                                                    }}
-                                                    {{ opt.scope }}
+                                                    {{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{
+                                                    formatPrice(opt.value_cents ?? 0) }} {{ opt.scope }}
                                                 </template>
                                                 )
                                             </span>
@@ -181,17 +174,17 @@ async function goToStripe() {
                             <li class="flex justify-between">
                                 <span>Subtotal</span><span>{{
                                     formatPrice(totals.subtotal_cents)
-                                }}</span>
+                                    }}</span>
                             </li>
                             <li class="flex justify-between">
                                 <span>Shipping</span><span>{{
                                     formatPrice(totals.shipping_cents)
-                                }}</span>
+                                    }}</span>
                             </li>
                             <li class="flex justify-between">
                                 <span>Tax</span><span>{{
                                     formatPrice(totals.tax_cents)
-                                }}</span>
+                                    }}</span>
                             </li>
                         </ul>
                         <div class="mt-3 border-t pt-3 flex justify-between font-semibold">

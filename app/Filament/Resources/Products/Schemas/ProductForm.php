@@ -150,15 +150,20 @@ class ProductForm
                                 $type = $data['type'] ?? null;
 
                                 if ($type === \App\Models\OptionGroup::TYPE_SELECTOR) {
-                                    // 1) пробуем взять из selector_pricing_mode (UI)
-                                    // 2) если вдруг его нет (редактирование старых записей) — fallback на pricing_mode из БД/стейта
                                     $pm = $data['selector_pricing_mode'] ?? $data['pricing_mode'] ?? null;
                                     $data['pricing_mode'] = in_array($pm, ['absolute', 'percent'], true) ? $pm : 'absolute';
                                 } elseif ($type === \App\Models\OptionGroup::TYPE_RANGE) {
                                     $pm = $data['range_pricing_mode'] ?? $data['pricing_mode'] ?? null;
                                     $data['pricing_mode'] = in_array($pm, ['flat', 'tiered'], true) ? $pm : 'flat';
+                                } elseif ($type === \App\Models\OptionGroup::TYPE_UNIQUE_D4) {
+                                    $labels = $data['unique_d4_labels'] ?? [];
+                                    $labels = array_values(array_slice(array_map(
+                                        fn($v) => trim((string)$v),
+                                        (array) $labels
+                                    ), 0, 4));
+                                    $data['unique_d4_labels'] = $labels;
                                 } else {
-                                    // для остальных типов это поле нам не нужно, но если пришло — не даём мусору попасть
+                                    // страховка от мусора
                                     if (!in_array(($data['pricing_mode'] ?? null), ['absolute', 'percent', 'flat', 'tiered', null], true)) {
                                         $data['pricing_mode'] = null;
                                     }
@@ -167,6 +172,7 @@ class ProductForm
                                 unset($data['selector_pricing_mode'], $data['range_pricing_mode']);
                                 return $data;
                             })
+
                             ->mutateRelationshipDataBeforeSaveUsing(function (array $data) {
                                 $type = $data['type'] ?? null;
 
@@ -176,6 +182,13 @@ class ProductForm
                                 } elseif ($type === \App\Models\OptionGroup::TYPE_RANGE) {
                                     $pm = $data['range_pricing_mode'] ?? $data['pricing_mode'] ?? null;
                                     $data['pricing_mode'] = in_array($pm, ['flat', 'tiered'], true) ? $pm : 'flat';
+                                } elseif ($type === \App\Models\OptionGroup::TYPE_UNIQUE_D4) {
+                                    $labels = $data['unique_d4_labels'] ?? [];
+                                    $labels = array_values(array_slice(array_map(
+                                        fn($v) => trim((string)$v),
+                                        (array) $labels
+                                    ), 0, 4));
+                                    $data['unique_d4_labels'] = $labels;
                                 }
 
                                 unset($data['selector_pricing_mode'], $data['range_pricing_mode']);
@@ -208,7 +221,8 @@ class ProductForm
                                             OptionGroup::TYPE_SLIDER           => 'QuantitySlider',
                                             OptionGroup::TYPE_RANGE            => 'DoubleRangeSlider',
                                             OptionGroup::TYPE_SELECTOR         => 'Selector (single / multi)',
-                                            \App\Models\OptionGroup::TYPE_BUNDLE => 'Bundle (currency mix)',
+                                            OptionGroup::TYPE_BUNDLE => 'Bundle (currency mix)',
+                                            OptionGroup::TYPE_UNIQUE_D4 => 'Unique item D4 (GA + 4 labels)',
                                         ])
                                         ->native(false)
                                         ->required()
@@ -394,6 +408,111 @@ class ProductForm
                                             ])
                                             ->columnSpan(12),
                                     ]),
+                                UiGrid::make(12)
+                                    ->visible(fn($get) => $get('type') === \App\Models\OptionGroup::TYPE_UNIQUE_D4)
+                                    ->columnSpanFull()
+                                    ->schema([
+
+                                        // Scope: Global / Local
+                                        \Filament\Forms\Components\Toggle::make('unique_d4_is_global')
+                                            ->label('Scope: Global (shared across products)')
+                                            ->helperText('Если включено — цены и режим берутся из выбранного/создаваемого профиля и шарятся всеми продуктами с флагом Global.')
+                                            ->reactive()
+                                            ->columnSpan(12),
+
+                                        // Профиль GA (ключ + title) — будем upsert-ить в ga_profiles
+                                        \Filament\Forms\Components\TextInput::make('ga_profile_key')
+                                            ->label('GA Profile key (for Global)')
+                                            ->placeholder('unique_d4_default')
+                                            ->visible(fn($get) => (bool)$get('unique_d4_is_global'))
+                                            ->maxLength(64)
+                                            ->columnSpan(4),
+
+                                        \Filament\Forms\Components\TextInput::make('ga_profile_title')
+                                            ->label('GA Profile title')
+                                            ->placeholder('Unique D4 shared pricing')
+                                            ->visible(fn($get) => (bool)$get('unique_d4_is_global'))
+                                            ->maxLength(128)
+                                            ->columnSpan(4),
+
+                                        \Filament\Forms\Components\Select::make('ga_profile_pricing_mode')
+                                            ->label('Pricing mode (Global)')
+                                            ->options(['absolute' => 'Absolute (+N cents)', 'percent' => 'Percent (+N%)'])
+                                            ->default('absolute')
+                                            ->visible(fn($get) => (bool)$get('unique_d4_is_global'))
+                                            ->reactive()
+                                            ->columnSpan(4),
+
+                                        // Global — цены (жёстко 1..4 GA)
+                                        \Filament\Forms\Components\TextInput::make('ga_profile_ga1')
+                                            ->label('1 GA')
+                                            ->numeric()
+                                            ->rule(fn($get) => ($get('ga_profile_pricing_mode') ?? 'absolute') === 'percent' ? 'decimal:0,3' : 'integer')
+                                            ->default(0)
+                                            ->visible(fn($get) => (bool)$get('unique_d4_is_global'))
+                                            ->columnSpan(3),
+                                        \Filament\Forms\Components\TextInput::make('ga_profile_ga2')->label('2 GA')->numeric()
+                                            ->rule(fn($get) => ($get('ga_profile_pricing_mode') ?? 'absolute') === 'percent' ? 'decimal:0,3' : 'integer')
+                                            ->default(0)->visible(fn($get) => (bool)$get('unique_d4_is_global'))->columnSpan(3),
+                                        \Filament\Forms\Components\TextInput::make('ga_profile_ga3')->label('3 GA')->numeric()
+                                            ->rule(fn($get) => ($get('ga_profile_pricing_mode') ?? 'absolute') === 'percent' ? 'decimal:0,3' : 'integer')
+                                            ->default(0)->visible(fn($get) => (bool)$get('unique_d4_is_global'))->columnSpan(3),
+                                        \Filament\Forms\Components\TextInput::make('ga_profile_ga4')->label('4 GA')->numeric()
+                                            ->rule(fn($get) => ($get('ga_profile_pricing_mode') ?? 'absolute') === 'percent' ? 'decimal:0,3' : 'integer')
+                                            ->default(0)->visible(fn($get) => (bool)$get('unique_d4_is_global'))->columnSpan(3),
+
+                                        // Local — режим/цены
+                                        \Filament\Forms\Components\Select::make('unique_d4_pricing_mode')
+                                            ->label('Pricing mode (Local)')
+                                            ->options(['absolute' => 'Absolute (+N cents)', 'percent' => 'Percent (+N%)'])
+                                            ->default('absolute')
+                                            ->visible(fn($get) => ! (bool)$get('unique_d4_is_global'))
+                                            ->reactive()
+                                            ->columnSpan(4),
+
+                                        \Filament\Forms\Components\TextInput::make('unique_d4_ga1_cents')
+                                            ->label('1 GA')
+                                            ->numeric()->default(0)
+                                            ->visible(fn($get) => ! (bool)$get('unique_d4_is_global') && (($get('unique_d4_pricing_mode') ?? 'absolute') === 'absolute'))
+                                            ->columnSpan(2),
+                                        \Filament\Forms\Components\TextInput::make('unique_d4_ga2_cents')->label('2 GA')->numeric()->default(0)
+                                            ->visible(fn($get) => ! (bool)$get('unique_d4_is_global') && (($get('unique_d4_pricing_mode') ?? 'absolute') === 'absolute'))
+                                            ->columnSpan(2),
+                                        \Filament\Forms\Components\TextInput::make('unique_d4_ga3_cents')->label('3 GA')->numeric()->default(0)
+                                            ->visible(fn($get) => ! (bool)$get('unique_d4_is_global') && (($get('unique_d4_pricing_mode') ?? 'absolute') === 'absolute'))
+                                            ->columnSpan(2),
+                                        \Filament\Forms\Components\TextInput::make('unique_d4_ga4_cents')->label('4 GA')->numeric()->default(0)
+                                            ->visible(fn($get) => ! (bool)$get('unique_d4_is_global') && (($get('unique_d4_pricing_mode') ?? 'absolute') === 'absolute'))
+                                            ->columnSpan(2),
+
+                                        \Filament\Forms\Components\TextInput::make('unique_d4_ga1_percent')
+                                            ->label('1 GA (%)')->numeric()->rule('decimal:0,3')->default(null)
+                                            ->visible(fn($get) => ! (bool)$get('unique_d4_is_global') && (($get('unique_d4_pricing_mode') ?? 'absolute') === 'percent'))
+                                            ->columnSpan(2),
+                                        \Filament\Forms\Components\TextInput::make('unique_d4_ga2_percent')
+                                            ->label('2 GA (%)')->numeric()->rule('decimal:0,3')->default(null)
+                                            ->visible(fn($get) => ! (bool)$get('unique_d4_is_global') && (($get('unique_d4_pricing_mode') ?? 'absolute') === 'percent'))
+                                            ->columnSpan(2),
+                                        \Filament\Forms\Components\TextInput::make('unique_d4_ga3_percent')
+                                            ->label('3 GA (%)')->numeric()->rule('decimal:0,3')->default(null)
+                                            ->visible(fn($get) => ! (bool)$get('unique_d4_is_global') && (($get('unique_d4_pricing_mode') ?? 'absolute') === 'percent'))
+                                            ->columnSpan(2),
+                                        \Filament\Forms\Components\TextInput::make('unique_d4_ga4_percent')
+                                            ->label('4 GA (%)')->numeric()->rule('decimal:0,3')->default(null)
+                                            ->visible(fn($get) => ! (bool)$get('unique_d4_is_global') && (($get('unique_d4_pricing_mode') ?? 'absolute') === 'percent'))
+                                            ->columnSpan(2),
+
+                                        Fieldset::make('Item attributes (labels)')
+                                            ->columns(4)
+                                            ->schema([
+                                                \Filament\Forms\Components\TextInput::make('unique_d4_labels.0')->label('Label #1')->maxLength(96),
+                                                \Filament\Forms\Components\TextInput::make('unique_d4_labels.1')->label('Label #2')->maxLength(96),
+                                                \Filament\Forms\Components\TextInput::make('unique_d4_labels.2')->label('Label #3')->maxLength(96),
+                                                \Filament\Forms\Components\TextInput::make('unique_d4_labels.3')->label('Label #4')->maxLength(96),
+                                            ])
+                                            
+                                            ->columnSpan(12),
+                                    ]),
 
                                 // ── БЛОК НАСТРОЕК ДЛЯ quantity_slider: отдельным блоком, на всю ширину ─────
                                 UiGrid::make(12)
@@ -434,7 +553,7 @@ class ProductForm
                                     })
                                     ->mutateRelationshipDataBeforeSaveUsing(function (array $data, callable $get) {
                                         $type = $get('../../type');
-                                        if ($type !== OptionGroup::TYPE_SELECTOR) return $data; // legacy не трогаем
+                                        if ($type !== OptionGroup::TYPE_SELECTOR) return $data;
 
                                         $mode = $get('../../selector_pricing_mode') ?? 'absolute';
                                         if ($mode === 'percent') {
