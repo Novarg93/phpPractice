@@ -11,7 +11,8 @@ use App\Http\Controllers\{
     PageController,
     PostController,
     ContactController,
-    StripeWebhookController
+    StripeWebhookController,
+    WorkflowController
 };
 use Illuminate\Foundation\Application;
 
@@ -29,6 +30,19 @@ Route::get('/', fn() => Inertia::render('Welcome', [
 ]))->name('home');
 
 
+Route::middleware(['auth', 'verified', 'can:workflow'])
+    ->get('/workflow', [WorkflowController::class, 'index'])
+    ->name('workflow.index');
+
+
+    
+Route::middleware(['auth', 'verified', 'can:workflow'])->group(function () {
+    Route::get('/workflow', [WorkflowController::class, 'index'])->name('workflow.index');
+    Route::get('/workflow/list', [WorkflowController::class, 'list'])->name('workflow.list'); // JSON для автообновления
+    Route::patch('/workflow/item/{item}', [WorkflowController::class, 'update'])->name('workflow.item.update'); // инлайн-апдейты
+    Route::patch('/workflow/items/bulk', [\App\Http\Controllers\WorkflowController::class, 'bulkUpdate'])
+    ->name('workflow.items.bulk');
+});
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard'))->name('dashboard');

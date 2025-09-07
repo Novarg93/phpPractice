@@ -8,6 +8,10 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Order;
 use App\Services\Cart\CartTools;
 use Stripe\Webhook;
+use App\Events\OrderWorkflowUpdated;
+use App\Models\OrderItem;
+
+
 
 class StripeWebhookController extends Controller
 {
@@ -44,14 +48,24 @@ class StripeWebhookController extends Controller
                     DB::transaction(function () use ($order, $paymentId, $userId) {
                         $order->update([
                             'status'     => Order::STATUS_PAID,
-                            'placed_at'  => now(),
+                            'paid_at'    => now(),
                             'payment_id' => $paymentId,
                         ]);
+
+                        // 👇 ДОБАВЬ ЭТО: промоутим pending → paid
+                        $order->items()
+                            ->where('status', OrderItem::STATUS_PENDING)
+                            ->update(['status' => OrderItem::STATUS_PAID]);
 
                         if ($userId > 0) {
                             CartTools::clearUserCart($userId);
                         }
                     });
+
+                    DB::afterCommit(function () use ($order) {
+                        Log::info('Broadcast OrderWorkflowUpdated (after stripe paid)', ['order_id' => $order->id]);
+                        event(new \App\Events\OrderWorkflowUpdated($order->id));
+                    }); // 👈 realtime
                 }
 
                 // Идемпотентный ответ

@@ -303,7 +303,11 @@ class CartController extends Controller
                     || (bool)preg_match('/\b(ga|greater)\b/i', (string)($g->title ?? ''))
             );
             if ($gaGroup) {
-                $selectedGaValueId = collect($gaGroup->values ?? [])->pluck('id')->intersect($optionIds)->first();
+                $selectedGaValueId = collect($gaGroup->values ?? [])
+                    ->pluck('id')
+                    ->intersect($optionIds)   // ← GA точно в $optionIds
+                    ->first();
+                abort_if(!$selectedGaValueId, 422, 'Select GA level first.');
                 if ($selectedGaValueId) {
                     $gaValue = collect($gaGroup->values)->firstWhere('id', $selectedGaValueId);
                     $raw = data_get($gaValue->meta ?? [], 'ga_count');

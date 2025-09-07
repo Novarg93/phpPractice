@@ -8,6 +8,7 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use App\Models\OptionGroup;
 use App\Services\Cart\CartTools;
+use Illuminate\Support\Facades\Log;
 
 
 use App\Models\{Cart, OptionValue, Order, OrderItem};
@@ -184,6 +185,7 @@ class CheckoutController extends Controller
                     'unit_price_cents'  => $ci->unit_price_cents,
                     'qty'               => $ci->qty,
                     'line_total_cents'  => $ci->line_total_cents,
+                    'status'            => \App\Models\OrderItem::STATUS_PENDING,
 
                 ]);
 
@@ -242,6 +244,10 @@ class CheckoutController extends Controller
         // чистим корзину сразу (как и при обычном checkout)
         \App\Services\Cart\CartTools::clearUserCart($user->id);
 
+        DB::afterCommit(function () use ($order) {
+    event(new \App\Events\OrderWorkflowUpdated($order->id));
+});
+
         return response()->json([
             'ok'       => true,
             'order_id' => $order->id,
@@ -289,6 +295,7 @@ class CheckoutController extends Controller
                     'unit_price_cents'  => $ci->unit_price_cents,
                     'qty'               => $ci->qty,
                     'line_total_cents'  => $ci->line_total_cents,
+                    'status'            => \App\Models\OrderItem::STATUS_PENDING,
                 ]);
 
                 foreach ($ci->options as $opt) {
@@ -344,6 +351,10 @@ class CheckoutController extends Controller
         });
 
         CartTools::clearUserCart($user->id);
+       DB::afterCommit(function () use ($order) {
+    Log::info('Broadcast OrderWorkflowUpdated (after create pending)', ['order_id' => $order->id]);
+    event(new \App\Events\OrderWorkflowUpdated($order->id));
+});
 
         // 3) Готовим line items для Stripe (как у тебя было)
         $optIds = $cart->items->flatMap(fn($ci) => $ci->options->pluck('option_value_id'))->filter()->unique()->values();

@@ -1,7 +1,7 @@
 import Echo from 'laravel-echo'
 import Pusher from 'pusher-js'
 
-Pusher.logToConsole = false // временно, чтобы видеть детальные логи Pusher
+Pusher.logToConsole = true // временно, чтобы видеть детальные логи Pusher
 window.Pusher = Pusher
 
 window.Echo = new Echo({
@@ -14,6 +14,12 @@ window.Echo = new Echo({
 window.Echo.connector.pusher.connection.bind('connected', () => {
   console.log('[Echo] connected ✅')
 })
+
+window.Echo.private('orders')
+  .subscribed(() => console.log('[Echo] subscribed to private:orders ✅'))
+  .listen('.workflow.updated', () => {
+    window.dispatchEvent(new CustomEvent('realtime-orders'))
+  })
 
 window.Echo.channel('contact-messages')
   .subscribed(() => console.log('[Echo] subscribed to contact-messages ✅'))
@@ -30,3 +36,10 @@ window.Echo.channel('contact-messages')
     console.debug('[Echo] deleted', e)
     window.dispatchEvent(new CustomEvent('realtime-contact'))
   })
+
+  window.Echo.connector.pusher.connection.bind('state_change', (s) => {
+  console.log('[Pusher] state', s.previous, '→', s.current)
+})
+window.Echo.connector.pusher.connection.bind('error', (err) => {
+  console.error('[Pusher] error ❌', err)
+})

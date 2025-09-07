@@ -5,7 +5,9 @@ use Illuminate\Support\Facades\Broadcast;
 // Регистрирует POST /broadcasting/auth с 'web' + 'auth'
 Broadcast::routes(['middleware' => ['web', 'auth']]);
 
-// Публичные каналы НЕ требуют объявлений ниже.
+Broadcast::channel('orders', function ($user) {
+    return in_array($user->role, ['support','admin'], true);
+});
 // Здесь можно описывать приватные/присутствия-каналы при необходимости.
 // Пример (можно оставить закомментированным):
 /*

@@ -326,6 +326,34 @@ async function addToCart() {
     // 2) обычный товар
     const payload = buildAddToCartPayload()
 
+    if (gaGroupD4.value && statsGroupD4.value) {
+  const gid = gaGroupD4.value.id
+  // достаём текущее значение GA как число
+  let raw = (selectionByGroup.value as any)[gid]
+  const gaId = raw == null
+    ? null
+    : Number(Array.isArray(raw) ? raw[0] : raw)
+
+  if (!gaId) {
+    errors.value = ['Select GA level first.']
+    submitting.value = false
+    return
+  }
+
+  // убедимся, что option_value_ids существует и содержит GA
+  const ids = new Set<number>(Array.isArray((payload as any).option_value_ids) ? (payload as any).option_value_ids : [])
+  ids.add(gaId)
+
+  // добавим выбранные статы (они иногда теряются, если билдер скрывает служебную группу)
+  const statsIds = Array.isArray(statsModel.value) ? statsModel.value.map(Number) : []
+  for (const id of statsIds) ids.add(id)
+
+  ;(payload as any).option_value_ids = Array.from(ids)
+
+  // сервер сам помечает GA по статам — не отправляем affix_ga_ids
+  delete (payload as any).affix_ga_ids
+}
+
     const hasD4 = !!statsGroupD4.value
     if (hasD4) {
       // D4: не отправляем affix_ga_ids — сервер читает выбор из selection[unique_d4_stats]
