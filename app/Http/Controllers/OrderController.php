@@ -57,6 +57,10 @@ class OrderController extends Controller
         $order->game_payload = $payload;
         $order->save();
 
+        DB::afterCommit(function () use ($order) {
+        event(new \App\Events\OrderWorkflowUpdated($order->id));
+    });
+
         return response()->json(['ok' => true, 'nickname' => $data['nickname']]);
     }
 

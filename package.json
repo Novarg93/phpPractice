@@ -35,6 +35,7 @@
         "reka-ui": "^2.5.0",
         "tailwind-merge": "^3.3.1",
         "tailwindcss-animate": "^1.0.7",
-        "vaul-vue": "^0.4.1"
+        "vaul-vue": "^0.4.1",
+        "vue-sonner": "^2.0.8"
     }
 }

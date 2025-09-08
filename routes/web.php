@@ -94,7 +94,9 @@ Route::post('/contact/send', [ContactController::class, 'send'])
 Route::get('/games', [GameController::class, 'index'])->name('games.index');
 
 Route::post('/checkout/nickname', [CheckoutController::class, 'saveNickname'])->name('checkout.nickname');
-Route::post('/orders/{order}/nickname', [OrderController::class, 'saveNickname'])->name('orders.nickname');
+Route::post('/orders/{order}/nickname', [OrderController::class, 'saveNickname'])
+    ->middleware(['auth', 'throttle:10,1']) 
+    ->name('orders.nickname');
 
 Route::scopeBindings()->group(function () {
     Route::get('/games/{game:slug}', [CatalogController::class, 'index'])->name('games.show');

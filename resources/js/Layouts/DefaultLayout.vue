@@ -22,7 +22,8 @@ import {
     DrawerTitle,
     DrawerTrigger,
 } from '@/Components/ui/drawer'
-
+import { Toaster } from '@/Components/ui/sonner'
+import 'vue-sonner/style.css';
 import { Button } from "@/Components/ui/button";
 import { Separator } from "@/Components/ui/separator";
 import { ShoppingCart } from "lucide-vue-next";
@@ -290,4 +291,5 @@ onMounted(() => loadSummary())
 
         </footer>
     </div>
+    <Toaster theme="dark" rich-colors :visible-toasts="2"  />
 </template>

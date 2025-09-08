@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Events\OrderWorkflowUpdated;
+use Illuminate\Validation\ValidationException;
 use App\Models\Order;
 use App\Models\OrderItem;
 use Illuminate\Http\Request;
@@ -20,14 +20,123 @@ class WorkflowController extends Controller
         ]);
     }
 
-    public function list(Request $r)
+    private function escapeLike(string $v): string
     {
-        // только JSON, чтобы фронт дергал при realtime-событиях
-        return response()->json([
-            'items' => $this->fetchItems(),
-        ]);
+        // Экранируем спецсимволы для LIKE/ILIKE, чтобы "%", "_" работали как литералы
+        return str_replace(['\\',   '%',  '_'], ['\\\\', '\\%', '\\_'], $v);
     }
 
+
+    public function list(Request $r)
+    {
+        $statuses = array_values(array_intersect(
+            (array) $r->input('statuses', []),
+            ['pending', 'paid', 'in_progress', 'completed', 'refund']
+        ));
+        if (empty($statuses)) {
+            $statuses = ['pending', 'paid', 'in_progress', 'completed', 'refund'];
+        }
+
+        $q     = trim((string) $r->input('q', ''));
+        $limit = min(max((int) $r->input('limit', 50), 10), 200);
+
+        $cOrder = $r->input('cursor.order_id');
+        $cItem  = $r->input('cursor.id');
+
+        $itemsQ = \App\Models\OrderItem::query()
+            ->with(['order.user', 'product.optionGroups', 'options'])
+            ->whereIn('status', $statuses)
+            ->orderByDesc('order_id')
+            ->orderByDesc('id');
+
+        if ($q !== '') {
+            $tokens = array_values(array_filter(preg_split('/\s+/', $q)));
+            $itemsQ->where(function ($outer) use ($tokens) {
+                foreach ($tokens as $tok) {
+                    $outer->where(function ($sub) use ($tok) {
+                        $raw = trim($tok);
+
+                        // "#123" → по order_id / item.id
+                        if (str_starts_with($raw, '#')) {
+                            $num = (int) substr($raw, 1);
+                            $sub->where('order_id', $num)
+                                ->orWhere('id', $num);
+                            return;
+                        }
+
+                        // чисто цифры → как подстрока по order_id / id
+                        if (ctype_digit($raw)) {
+                            $likeNum = '%' . $this->escapeLike($raw) . '%';
+                            $sub->where('order_id', 'like', $likeNum)
+                                ->orWhere('id', 'like', $likeNum);
+                            return;
+                        }
+
+                        // --- текстовый токен: ИЩЕМ ТАКЖЕ ПО НИКУ/CHARACTER В JSON ---
+                        $nick = ltrim($raw, '@'); // можно вводить с @
+                        $like = '%' . $this->escapeLike($nick) . '%';
+
+                        // user/email/имена + product_name
+                        $sub->whereHas('order.user', function ($u) use ($like) {
+                            $u->where('email', 'like', $like)
+                                ->orWhere('name', 'like', $like)
+                                ->orWhere('full_name', 'like', $like);
+                        })
+                            ->orWhere('product_name', 'like', $like)
+                            // JSON: orders.game_payload.nickname / character
+                            ->orWhereHas('order', function ($ord) use ($like) {
+                                $driver = DB::connection()->getDriverName();
+
+                                if ($driver === 'mysql') {
+                                    // регистр обычно игнорируется из-за collation, LIKE работает по JSON path
+                                    $ord->where('game_payload->nickname', 'like', $like)
+                                        ->orWhere('game_payload->character', 'like', $like);
+                                } elseif ($driver === 'pgsql') {
+                                    // регистронезависимый поиск
+                                    $ord->whereRaw("(game_payload->>'nickname') ILIKE ?", [$like])
+                                        ->orWhereRaw("(game_payload->>'character') ILIKE ?", [$like]);
+                                } else { // sqlite с JSON1
+                                    $ord->whereRaw("json_extract(game_payload, '$.nickname') LIKE ?", [$like])
+                                        ->orWhereRaw("json_extract(game_payload, '$.character') LIKE ?", [$like]);
+                                }
+                            });
+                    });
+                }
+            });
+        }
+
+        // ← total считаем ПОСЛЕ фильтров/поиска, НО ДО курсора
+        $total = (clone $itemsQ)->reorder()->count('order_items.id');
+
+        // курсор (загружаем "старше")
+        if ($cOrder && $cItem) {
+            $itemsQ->where(function ($w) use ($cOrder, $cItem) {
+                $w->where('order_id', '<', $cOrder)
+                    ->orWhere(function ($w2) use ($cOrder, $cItem) {
+                        $w2->where('order_id', '=', $cOrder)
+                            ->where('id', '<', $cItem);
+                    });
+            });
+        }
+
+        $rows    = $itemsQ->limit($limit + 1)->get();
+        $hasMore = $rows->count() > $limit;
+        $rows    = $rows->take($limit);
+
+        $mapped = $rows->map(fn($i) => $this->mapItem($i))->values();
+
+        $nextCursor = null;
+        if ($hasMore) {
+            $last = $rows->last();
+            $nextCursor = ['order_id' => $last->order_id, 'id' => $last->id];
+        }
+
+        return response()->json([
+            'items'       => $mapped,
+            'next_cursor' => $nextCursor,
+            'total'       => $total,       // 👈 добавили
+        ]);
+    }
     public function update(Request $r, OrderItem $item)
     {
         $data = $r->validate([
@@ -37,26 +146,62 @@ class WorkflowController extends Controller
         ]);
 
         return DB::transaction(function () use ($item, $data) {
-            $forcedInProgress = false;
+            $item->load('order');
+            /** @var \App\Models\Order $order */
+            $order = $item->order;
+
             $clientStatus = $data['status'] ?? null;
+            $forcedInProgress = false;
 
-            // 1) cost -> cents + прибыль
-            if (array_key_exists('cost_price', $data)) {
-                $item->cost_cents = $data['cost_price'] !== null ? (int) round($data['cost_price'] * 100) : null;
-                $item->recalcProfit();
+            // 🔒 статус руками менять нельзя, если заказ pending или refund
+            if (
+                array_key_exists('status', $data) &&
+                $clientStatus !== null &&
+                $clientStatus !== $item->status &&
+                in_array($order->status, [
+                    \App\Models\Order::STATUS_PENDING,
+                    \App\Models\Order::STATUS_REFUND,
+                ], true)
+            ) {
+                throw ValidationException::withMessages([
+                    'status' => ['Order is pending/refund; manual status changes are not allowed.'],
+                ]);
+            }
 
-                // если есть себестоимость и (текущий или присланный) статус pending/paid → IN_PROGRESS
-                $baseStatus = $clientStatus ?? $item->status;
-                if ($item->cost_cents !== null && in_array($baseStatus, ['pending', 'paid'], true)) {
-                    $item->status = \App\Models\OrderItem::STATUS_IN_PROGRESS;
-                    $forcedInProgress = true;
+            // если заказ REFUND — принудительно очищаем себестоимость и игнорируем входящий cost
+            if ($order->status === \App\Models\Order::STATUS_REFUND) {       // 🔒
+                if ($item->cost_cents !== null) {
+                    $item->cost_cents = null;
+                    $item->recalcProfit();
+                }
+            } else {
+                // можно редактировать cost, НО автоподнятие в in_progress только если заказ уже оплачен/выше
+                $orderPaidish = in_array($order->status, [
+                    \App\Models\Order::STATUS_PAID,
+                    \App\Models\Order::STATUS_IN_PROGRESS,
+                    \App\Models\Order::STATUS_COMPLETED,
+                ], true);
+
+                if (array_key_exists('cost_price', $data)) {
+                    $item->cost_cents = $data['cost_price'] !== null ? (int) round($data['cost_price'] * 100) : null;
+                    $item->recalcProfit();
+
+                    $baseStatus = $clientStatus ?? $item->status;
+                    if (
+                        $item->cost_cents !== null &&
+                        in_array($baseStatus, ['paid', 'in_progress'], true) &&
+                        $orderPaidish
+                    ) {
+                        $item->status = \App\Models\OrderItem::STATUS_IN_PROGRESS;
+                        $forcedInProgress = true;
+                    }
                 }
             }
 
-            // 2) ручной статус — применяем, НО не затираем принудительный IN_PROGRESS на pending/paid
-            if (!empty($clientStatus)) {
+            // ручной статус (если не залочено выше)
+            if (array_key_exists('status', $data) && $clientStatus !== null) {
                 if ($forcedInProgress && in_array($clientStatus, ['pending', 'paid'], true)) {
-                    // игнорируем откат
+                    // игнор отката
                 } else {
                     $item->status = $clientStatus;
                 }
@@ -68,15 +213,12 @@ class WorkflowController extends Controller
 
             $item->save();
 
-            /** @var Order $order */
-            $order = $item->order()->firstOrFail();
             $order->recalcTotals();
             $order->syncStatusFromItems();
 
-            // если конкретно этот item стал IN_PROGRESS — поднимем и заказ, если вдруг не поднялся
             if (
-                $item->status === \App\Models\OrderItem::STATUS_IN_PROGRESS
-                && $order->status !== \App\Models\Order::STATUS_IN_PROGRESS
+                $item->status === \App\Models\OrderItem::STATUS_IN_PROGRESS &&
+                $order->status !== \App\Models\Order::STATUS_IN_PROGRESS
             ) {
                 $order->status = \App\Models\Order::STATUS_IN_PROGRESS;
                 $order->save();
@@ -94,7 +236,7 @@ class WorkflowController extends Controller
     private function fetchItems(): array
     {
         $items = \App\Models\OrderItem::query()
-            ->with(['order.user', 'product', 'options'])
+            ->with(['order.user', 'product.optionGroups', 'options'])
             // Вариант А (по заказам и внутри по item): порядок читается блоками по ордерам
             ->orderBy('order_id', 'desc')
             ->orderBy('id', 'asc')
@@ -113,8 +255,10 @@ class WorkflowController extends Controller
         $payload = $order?->game_payload ?? [];
         $nickname = $payload['nickname'] ?? $payload['character'] ?? null;
 
-        // Показываем paid_at, если есть. Иначе — placed_at, иначе — created_at.
         $dt = $order?->paid_at ?? $order?->placed_at ?? $order?->created_at;
+
+        $hasQtySlider = (bool) $i->product?->optionGroups
+            ?->contains('type', \App\Models\OptionGroup::TYPE_SLIDER);
 
         return [
             'id'             => $i->id,
@@ -122,19 +266,21 @@ class WorkflowController extends Controller
             'customer_email' => $user?->email,
             'chatnickname'   => $user?->full_name ?? $user?->name ?? null,
             'character'      => $nickname,
-            'item_text'      => $this->buildItemText($i), // у тебя уже отдаёт HTML с <br> и "· "
+            'item_text'      => $this->buildItemText($i),
+
+            'qty'            => (int) $i->qty,                                   // ⬅️
+            'unit_price'     => round((int)($i->unit_price_cents ?? 0) / 100, 2), // ⬅️
+            'has_qty_slider' => $hasQtySlider,                                   // ⬅️
+
             'cost_price'     => $i->cost_cents !== null ? round($i->cost_cents / 100, 2) : null,
             'sale_price'     => round(($i->line_total_cents ?? 0) / 100, 2),
             'profit'         => $i->profit_cents !== null ? round($i->profit_cents / 100, 2) : null,
             'margin_percent' => $i->margin_bp !== null ? round($i->margin_bp / 100, 2) : null,
             'status'         => $i->status,
+            'order_status'   => $order?->status,
 
-            // Дата — в две строки
             'date'           => $dt ? $dt->format('H:i:s') . '<br>' . $dt->format('d.m.Y') : null,
-
-            // Delivery форматируешь как раньше
             'delivery_time'  => $this->formatDuration($order?->delivery_seconds),
-
             'link_screen'    => $i->link_screen,
         ];
     }
@@ -211,23 +357,59 @@ class WorkflowController extends Controller
                 /** @var OrderItem $item */
                 $item = OrderItem::with('order')->findOrFail($row['id']);
 
-                $forcedInProgress = false;
                 $clientStatus = $row['status'] ?? null;
+                $forcedInProgress = false;
 
-                if (array_key_exists('cost_price', $row)) {
-                    $item->cost_cents = $row['cost_price'] !== null ? (int) round($row['cost_price'] * 100) : null;
-                    $item->recalcProfit();
+                // 🔒 запрет смены статусов для pending/refund (только если реально меняется)
+                if (
+                    array_key_exists('status', $row) &&
+                    $clientStatus !== null &&
+                    $clientStatus !== $item->status &&
+                    in_array($item->order?->status, [
+                        \App\Models\Order::STATUS_PENDING,
+                        \App\Models\Order::STATUS_REFUND,
+                    ], true)
+                ) {
+                    throw ValidationException::withMessages([
+                        "items.{$row['id']}.status" => [
+                            "Order #{$item->order_id} is pending/refund; manual status change for item #{$item->id} is not allowed."
+                        ],
+                    ]);
+                }
 
-                    $baseStatus = $clientStatus ?? $item->status;
-                    if ($item->cost_cents !== null && in_array($baseStatus, ['pending', 'paid'], true)) {
-                        $item->status = OrderItem::STATUS_IN_PROGRESS;
-                        $forcedInProgress = true;
+                // REFUND: жёстко чистим cost, игнорируем входящий
+                if ($item->order?->status === \App\Models\Order::STATUS_REFUND) {   // 🔒
+                    if ($item->cost_cents !== null) {
+                        $item->cost_cents = null;
+                        $item->recalcProfit();
+                    }
+                } else {
+                    // обычная логика cost + автоподнятие только после оплаты/выше
+                    $orderPaidish = in_array($item->order->status, [
+                        \App\Models\Order::STATUS_PAID,
+                        \App\Models\Order::STATUS_IN_PROGRESS,
+                        \App\Models\Order::STATUS_COMPLETED,
+                    ], true);
+
+                    if (array_key_exists('cost_price', $row)) {
+                        $item->cost_cents = $row['cost_price'] !== null ? (int) round($row['cost_price'] * 100) : null;
+                        $item->recalcProfit();
+
+                        $baseStatus = $clientStatus ?? $item->status;
+                        if (
+                            $item->cost_cents !== null &&
+                            in_array($baseStatus, ['paid', 'in_progress'], true) &&
+                            $orderPaidish
+                        ) {
+                            $item->status = OrderItem::STATUS_IN_PROGRESS;
+                            $forcedInProgress = true;
+                        }
                     }
                 }
 
-                if (!empty($clientStatus)) {
+                if (array_key_exists('status', $row) && $clientStatus !== null) {
                     if ($forcedInProgress && in_array($clientStatus, ['pending', 'paid'], true)) {
-                        // игнорируем откат
+                        // игнор отката
                     } else {
                         $item->status = $clientStatus;
                     }
