@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
-import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { onMounted, onBeforeUnmount, ref, computed } from 'vue'
 import axios from 'axios'
 
 import {
@@ -21,6 +21,8 @@ import {
     SelectContent,
     SelectItem,
 } from '@/Components/ui/select'
+import { Popover, PopoverTrigger, PopoverContent } from '@/Components/ui/popover'
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/Components/ui/command'
 
 type Row = {
     id: number
@@ -40,6 +42,8 @@ type Row = {
 }
 
 const props = defineProps<{ items: Row[] }>()
+const rows = ref<Row[]>([...props.items])
+
 
 let ordersChannel: any = null
 async function refreshList() {
@@ -63,7 +67,7 @@ function emailColorClass(status: Row['status']) {
     }
 }
 
-const rows = ref<Row[]>([...props.items])
+
 
 function markDirty(r: Row) {
     ; (r as any)._dirty = true
@@ -91,6 +95,66 @@ async function saveRow(r?: Row) {
     // очистим флаг грязности
     rows.value.forEach(x => delete (x as any)._dirty)
 }
+
+type Status = 'pending' | 'paid' | 'in_progress' | 'completed' | 'refund'
+
+const STATUS_LIST = ['pending', 'paid', 'in_progress', 'completed', 'refund'] as const
+
+
+const open = ref(false)
+const statusChecked = ref<Record<Status, boolean>>({
+    pending: true, paid: true, in_progress: true, completed: true, refund: true,
+})
+
+function toggleStatus(s: Status) {
+
+    statusChecked.value = { ...statusChecked.value, [s]: !statusChecked.value[s] }
+}
+function setAll(v: boolean) {
+    statusChecked.value = STATUS_LIST.reduce((acc, s) => {
+        acc[s] = v; return acc
+    }, {} as Record<Status, boolean>)
+}
+
+const selected = computed(() => STATUS_LIST.filter(s => statusChecked.value[s]))
+const buttonLabel = computed(() => {
+  const sel = selected.value
+  if (sel.length === STATUS_LIST.length) return 'Statuses: All'
+  if (sel.length === 0) return 'Statuses: None'
+  if (sel.length === 1) return `Status: ${sel[0].replace('_',' ')}`
+  return `Statuses: ${sel.length}`
+})
+
+
+
+
+const selectedStatuses = computed<Status[]>(() =>
+    STATUS_LIST.filter(s => statusChecked.value[s])
+)
+
+
+
+const visibleRows = computed<Row[]>(() => {
+    const sel = selectedStatuses.value
+    const allowed = new Set(sel)
+
+    return rows.value
+        .filter(r => allowed.has(r.status))
+        .slice()
+        .sort((a, b) => {
+            // если выбрано > 1 статуса — исключительно по id заказа (desc)
+            if (sel.length > 1) {
+                if (a.order_id !== b.order_id) return b.order_id - a.order_id
+                return b.id - a.id
+            }
+            // 0 или 1 статус — тоже по id заказа (desc)
+            if (a.order_id !== b.order_id) return b.order_id - a.order_id
+            return b.id - a.id
+        })
+})
+
+
+
 
 
 onMounted(() => {
@@ -121,10 +185,42 @@ onBeforeUnmount(() => {
 
 <template>
     <DefaultLayout>
-        <div class="px-4 sm:px-6 lg:px-8 py-6">
-            <h1 class="text-2xl font-semibold mb-4">Workflow</h1>
+        <div class="px-4 sm:px-6 lg:px-8 py-6 ">
+            <div class="flex items-center justify-between mb-4 gap-3">
+                <h1 class="text-2xl font-semibold">Workflow</h1>
 
-            <Table class="w-full text-sm">
+
+                <Popover v-model:open="open">
+                    <PopoverTrigger as-child>
+                        <Button variant="outline" size="sm">{{ buttonLabel }}</Button>
+                    </PopoverTrigger>
+
+                    <PopoverContent class="w-64 p-0">
+                        <Command>
+                            <CommandInput placeholder="Filter status..." />
+                            <CommandList>
+                                <CommandEmpty>No results</CommandEmpty>
+                                <CommandGroup heading="Statuses">
+                                    <CommandItem v-for="s in STATUS_LIST" :key="s" :value="s"
+                                        @select="(ev: any) => { ev?.preventDefault?.(); toggleStatus(s) }"
+                                        class="flex items-center gap-2 cursor-pointer">
+                                        <span class="w-2 h-2 rounded-full"
+                                            :class="statusChecked[s] ? 'bg-primary' : 'bg-muted-foreground/30'"></span>
+                                        <span class="capitalize select-none">{{ s.replace('_', ' ') }}</span>
+                                    </CommandItem>
+                                </CommandGroup>
+                            </CommandList>
+
+                            <div class="flex justify-between gap-2 p-2 border-t">
+                                <Button size="xs" variant="ghost" @click.stop="setAll(true)">Select all</Button>
+                                <Button size="xs" variant="ghost" @click.stop="setAll(false)">Clear</Button>
+                            </div>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
+            </div>
+
+            <Table class="w-full text-sm ">
 
 
                 <!-- sticky header -->
@@ -146,7 +242,7 @@ onBeforeUnmount(() => {
                 </TableHeader>
 
                 <TableBody>
-                    <TableRow v-for="r in rows" :key="r.id"
+                    <TableRow v-for="r in visibleRows" :key="r.id"
                         :class="[(r as any)._dirty ? 'bg-muted/50' : '', 'border-b']">
                         <!-- # -->
                         <TableCell class="font-medium whitespace-nowrap">
@@ -168,7 +264,8 @@ onBeforeUnmount(() => {
                         <!-- Cost (compact) -->
                         <TableCell>
                             <Input :model-value="r.cost_price ?? ''"
-                                @update:modelValue="(val) => { const s = String(val).replace(',', '.').trim(); r.cost_price = s === '' ? null : Number(s); markDirty(r) }" @keydown.enter.prevent="saveRow(r)" />
+                                @update:modelValue="(val) => { const s = String(val).replace(',', '.').trim(); r.cost_price = s === '' ? null : Number(s); markDirty(r) }"
+                                @keydown.enter.prevent="saveRow(r)" />
                         </TableCell>
 
                         <!-- Sale -->
@@ -188,7 +285,8 @@ onBeforeUnmount(() => {
 
                         <!-- Status -->
                         <TableCell>
-                            <Select v-model="r.status" @update:modelValue="() => markDirty(r)" @keydown.enter.prevent="saveRow(r)">
+                            <Select v-model="r.status" @update:modelValue="() => markDirty(r)"
+                                @keydown.enter.prevent="saveRow(r)">
                                 <SelectTrigger class="h-8 w-[150px]">
                                     <SelectValue placeholder="status" />
                                 </SelectTrigger>
@@ -216,7 +314,8 @@ onBeforeUnmount(() => {
                         <!-- Link (compact) -->
                         <TableCell>
                             <Input v-model="r.link_screen" @update:modelValue="() => markDirty(r)" type="url"
-                                class="w-[120px] h-8 text-xs" :title="r.link_screen ?? ''" placeholder="https://…" @keydown.enter.prevent="saveRow(r)" />
+                                class="w-[120px] h-8 text-xs" :title="r.link_screen ?? ''" placeholder="https://…"
+                                @keydown.enter.prevent="saveRow(r)" />
                         </TableCell>
 
                         <!-- Save -->

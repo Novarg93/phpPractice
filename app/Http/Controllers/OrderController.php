@@ -18,15 +18,15 @@ class OrderController extends Controller
     public function index(Request $request)
     {
         $orders = Order::where('user_id', $request->user()->id)
-            ->orderByDesc(DB::raw('COALESCE(placed_at, created_at)')) // 👈 pending попадут наверх
+            ->orderByDesc(DB::raw('COALESCE(paid_at, placed_at, created_at)')) // 👈 тут
             ->withCount('items')
             ->paginate(20);
 
         return Inertia::render('Profile/Orders/Index', [
             'orders' => $orders->through(fn($o) => [
-                'id' => $o->id,
-                'status' => $o->status,
-                'placed_at' => optional($o->placed_at)->toDateTimeString(),
+                'id'          => $o->id,
+                'status'      => $o->status,
+                'placed_at'   => optional($o->paid_at ?? $o->placed_at ?? $o->created_at)->toDateTimeString(), // 👈 тут
                 'total_cents' => $o->total_cents,
                 'items_count' => $o->items_count,
                 'game_payload'   => $o->game_payload,
@@ -75,7 +75,7 @@ class OrderController extends Controller
             'order' => [
                 'id' => $order->id,
                 'status' => $order->status,
-                'placed_at' => optional($order->placed_at)->toDateTimeString(),
+                'placed_at'     => optional($order->paid_at ?? $order->placed_at ?? $order->created_at)->toDateTimeString(), // 👈 тут
                 'total_cents' => $order->total_cents,
                 'currency' => $order->currency,
                 'shipping_address' => $order->shipping_address,
