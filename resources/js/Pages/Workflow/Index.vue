@@ -18,30 +18,34 @@ type Row = {
     character?: string | null
     item_text: string
     cost_price: number | null
-    sale_price: number
-    profit: number | null
+    sale_price: number                 // нетто (с учётом скидки заказа)
+    sale_price_gross?: number          // брутто (без скидки), если хочешь показывать
+    discount?: number
+    profit_net: number | null
     margin_percent: number | null
     status: 'pending' | 'paid' | 'in_progress' | 'completed' | 'refund'
     date: string | null
     delivery_time: string | null
     link_screen: string | null
     order_status?: 'pending' | 'paid' | 'in_progress' | 'completed' | 'refund' | string
-     unit_price?: number;            
-  has_qty_slider?: boolean;
+    unit_price?: number;
+    has_qty_slider?: boolean;
+    order_discount?: number
+    promo_code?: string | null
 }
 
 const notifiedNewOrders = ref<Set<number>>(new Set())           // чтобы не спамить "New order"
 const lastNickByOrder = ref<Record<number, string | null>>({})
 
 function summarizeOrders(items: Row[]) {
-  const map: Record<number, { pending: boolean; nick: string | null }> = {}
-  for (const it of items) {
-    const oid = it.order_id
-    if (!map[oid]) map[oid] = { pending: false, nick: it.character ?? null }
-    if ((it.order_status ?? it.status) === 'pending') map[oid].pending = true // ⬅️
-    if (map[oid].nick == null && it.character) map[oid].nick = it.character
-  }
-  return map
+    const map: Record<number, { pending: boolean; nick: string | null }> = {}
+    for (const it of items) {
+        const oid = it.order_id
+        if (!map[oid]) map[oid] = { pending: false, nick: it.character ?? null }
+        if ((it.order_status ?? it.status) === 'pending') map[oid].pending = true // ⬅️
+        if (map[oid].nick == null && it.character) map[oid].nick = it.character
+    }
+    return map
 }
 
 
@@ -74,37 +78,37 @@ const totalCount = ref<number | null>(null)
 
 
 async function saveRow(r?: Row) {
-  const dirty = rows.value.filter(x => (x as any)._dirty || (r && x.id === r.id))
-  if (!dirty.length) return
+    const dirty = rows.value.filter(x => (x as any)._dirty || (r && x.id === r.id))
+    if (!dirty.length) return
 
-  const payload = {
-    items: dirty.map(x => ({
-      id: x.id,
-      cost_price: x.cost_price ?? null,
-      status: x.status,               // можно слать всегда
-      link_screen: x.link_screen ?? null,
-    })),
-  }
-
-  try {
-    const { data } = await axios.patch(route('workflow.items.bulk'), payload)
-    const map = new Map<number, Row>((data.items as Row[]).map(i => [i.id, i]))
-    const updatedIds = (data.items as Row[]).map(i => i.id)
-    if (updatedIds.length) flash(updatedIds, 'green')
-    rows.value = rows.value.map(x => map.get(x.id) ?? x)
-    rows.value.forEach(x => delete (x as any)._dirty)
-    toast.success('Saved')
-  } catch (e: any) {
-    const res = e?.response
-    if (res?.status === 422) {
-      const errors = res.data?.errors || {}
-      const flat = Object.values(errors).flat() as string[]
-      const msg = flat[0] || res.data?.message || 'Validation error'
-      toast.error('Save failed', { description: msg })
-    } else if (e.name !== 'CanceledError' && e.code !== 'ERR_CANCELED') {
-      toast.error('Save failed', { description: e?.message || 'Unknown error' })
+    const payload = {
+        items: dirty.map(x => ({
+            id: x.id,
+            cost_price: x.cost_price ?? null,
+            status: x.status,               // можно слать всегда
+            link_screen: x.link_screen ?? null,
+        })),
     }
-  }
+
+    try {
+        const { data } = await axios.patch(route('workflow.items.bulk'), payload)
+        const map = new Map<number, Row>((data.items as Row[]).map(i => [i.id, i]))
+        const updatedIds = (data.items as Row[]).map(i => i.id)
+        if (updatedIds.length) flash(updatedIds, 'green')
+        rows.value = rows.value.map(x => map.get(x.id) ?? x)
+        rows.value.forEach(x => delete (x as any)._dirty)
+        toast.success('Saved')
+    } catch (e: any) {
+        const res = e?.response
+        if (res?.status === 422) {
+            const errors = res.data?.errors || {}
+            const flat = Object.values(errors).flat() as string[]
+            const msg = flat[0] || res.data?.message || 'Validation error'
+            toast.error('Save failed', { description: msg })
+        } else if (e.name !== 'CanceledError' && e.code !== 'ERR_CANCELED') {
+            toast.error('Save failed', { description: e?.message || 'Unknown error' })
+        }
+    }
 }
 
 /* ========= filters ========= */
@@ -452,19 +456,25 @@ onBeforeUnmount(() => { try { (window as any).Echo?.leave('orders') } catch { } 
 
                         <!-- Item -->
                         <TableCell class="leading-5">
-  <div :class="emailColorClass(r.status)" v-html="r.item_text"></div>
-  <div v-if="r.has_qty_slider" class="text-xs text-muted-foreground mt-0.5">
-    Qty: {{ r.qty }}
-    <template v-if="r.unit_price !== undefined">
-      · {{ r.unit_price.toFixed(2) }} / each
-    </template>
-  </div>
-</TableCell>
+                            <div :class="emailColorClass(r.status)" v-html="r.item_text"></div>
+
+                            <!-- скидка по строке -->
+                            <div v-if="r.discount && r.discount > 0" class="text-xs text-green-700 mt-0.5">
+                                −{{ r.discount.toFixed(2) }}
+                                <span v-if="r.promo_code"> ({{ r.promo_code }})</span>
+                            </div>
+
+                            <div v-if="r.has_qty_slider" class="text-xs text-muted-foreground mt-0.5">
+                                Qty: {{ r.qty }}
+                                <template v-if="r.unit_price !== undefined">
+                                    · {{ r.unit_price.toFixed(2) }} / each
+                                </template>
+                            </div>
+                        </TableCell>
 
                         <!-- Cost -->
                         <TableCell>
-                            <Input :model-value="r.cost_price ?? ''"
-                                :disabled="r.order_status === 'refund'"
+                            <Input :model-value="r.cost_price ?? ''" :disabled="r.order_status === 'refund'"
                                 @update:modelValue="(val) => {
                                     const s = String(val).replace(',', '.').trim();
                                     r.cost_price = s === '' ? null : Number(s);
@@ -473,11 +483,15 @@ onBeforeUnmount(() => { try { (window as any).Echo?.leave('orders') } catch { } 
                         </TableCell>
 
                         <!-- Sale/Profit/Margin -->
-                        <TableCell class="whitespace-nowrap">{{ r.sale_price.toFixed(2) }}</TableCell>
-                        <TableCell class="whitespace-nowrap">{{ r.profit === null ? '—' : r.profit.toFixed(2) }}
+                        <TableCell class="whitespace-nowrap">
+                            {{ (r.sale_price ?? 0).toFixed(2) }}
                         </TableCell>
-                        <TableCell class="whitespace-nowrap">{{ r.margin_percent === null ? '—' :
-                            r.margin_percent.toFixed(2) }}</TableCell>
+                        <TableCell class="whitespace-nowrap">
+                            {{ r.profit_net == null ? '—' : r.profit_net.toFixed(2) }}
+                        </TableCell>
+                        <TableCell class="whitespace-nowrap">
+                            {{ r.margin_percent == null ? '—' : r.margin_percent.toFixed(2) }}
+                        </TableCell>
 
                         <!-- Status -->
                         <TableCell>

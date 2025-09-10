@@ -24,9 +24,19 @@ class CheckoutController extends Controller
             ]);
 
         abort_if($cart->items->isEmpty(), 404, 'Your cart is empty.');
+        $promo = null;
+        if ($pid = $request->session()->get('checkout.promo.id')) {
+            $promo = \App\Models\PromoCode::find($pid);
+        }
 
+        $totals = $this->calcTotalsWithPromo($cart, $promo, $request->user()->id);
         return Inertia::render('Checkout/Index', [
             'stripePk' => config('services.stripe.key'),
+            'totals' => $totals,
+            'promo'  => $promo ? [
+                'code' => $promo->code,
+                'discount_cents' => $totals['discount_cents'],
+            ] : null,
             'items' => $cart->items->map(function ($i) {
 
                 $rangeLabels = $i->options
@@ -47,6 +57,7 @@ class CheckoutController extends Controller
                             'affix' => 2,
                             default => 100,
                         };
+
                         return $priority * 1_000_000
                             + (int)($g->position ?? 0) * 1_000
                             + (int)($v->position ?? 0);
@@ -76,6 +87,7 @@ class CheckoutController extends Controller
                             $mode = 'absolute';
                             $valueCents = (int)($v->price_delta_cents ?? 0);
                         }
+
 
                         return [
                             'id'            => $v->id,
@@ -108,13 +120,7 @@ class CheckoutController extends Controller
                     'has_qty_slider' => $hasQtySlider,
                 ];
             })->values(),
-            'totals' => [
-                'subtotal_cents' => $cart->items->sum('line_total_cents'),
-                'shipping_cents' => 0,
-                'tax_cents' => 0,
-                'total_cents' => $cart->items->sum('line_total_cents'),
-                'currency' => 'USD',
-            ],
+
             'nickname' => $request->session()->get('checkout.nickname'),
         ]);
     }
@@ -154,22 +160,26 @@ class CheckoutController extends Controller
         abort_if($cart->items->isEmpty(), 422, 'Cart is empty');
 
         // считаем суммы
-        $subtotal = $cart->items->sum('line_total_cents');
-        $shipping = 0;
-        $tax      = 0;
-        $total    = $subtotal + $shipping + $tax;
+
+        $promo = null;
+        if ($pid = $request->session()->get('checkout.promo.id')) {
+            $promo = \App\Models\PromoCode::find($pid);
+        }
+        $totals = $this->calcTotalsWithPromo($cart, $promo, $user->id);
 
         // создаём pending-заказ + снапшоты позиций
-        $order = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $user, $cart, $subtotal, $shipping, $tax, $total) {
+        $order = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $user, $cart, $totals, $promo) {
             $order = \App\Models\Order::create([
                 'user_id'        => $user->id,
                 'status'         => \App\Models\Order::STATUS_PENDING,
-                'currency'       => 'USD',
-                'subtotal_cents' => $subtotal,
-                'shipping_cents' => $shipping,
-                'tax_cents'      => $tax,
-                'total_cents'    => $total,
-                'payment_method' => 'test', // помечаем, что это тестовая кнопка
+                'currency'       => $totals['currency'],
+                'subtotal_cents' => $totals['subtotal_cents'],
+                'shipping_cents' => $totals['shipping_cents'],
+                'tax_cents'      => $totals['tax_cents'],
+                'promo_code_id'  => $promo?->id,
+                'promo_discount_cents' => $totals['discount_cents'],
+                'total_cents'    => $totals['total_cents'],
+                'payment_method' => 'test',
                 'payment_id'     => null,
                 'placed_at'      => null,
                 'game_payload'   => [
@@ -185,7 +195,7 @@ class CheckoutController extends Controller
                     'unit_price_cents'  => $ci->unit_price_cents,
                     'qty'               => $ci->qty,
                     'line_total_cents'  => $ci->line_total_cents,
-                    'status'            => \App\Models\OrderItem::STATUS_PENDING,
+                    'status'            => OrderItem::STATUS_PENDING,
 
                 ]);
 
@@ -244,9 +254,12 @@ class CheckoutController extends Controller
         // чистим корзину сразу (как и при обычном checkout)
         \App\Services\Cart\CartTools::clearUserCart($user->id);
 
+        
+        $request->session()->forget('checkout.promo');
+
         DB::afterCommit(function () use ($order) {
-    event(new \App\Events\OrderWorkflowUpdated($order->id));
-});
+            event(new \App\Events\OrderWorkflowUpdated($order->id));
+        });
 
         return response()->json([
             'ok'       => true,
@@ -264,21 +277,25 @@ class CheckoutController extends Controller
         abort_if($cart->items->isEmpty(), 422, 'Cart is empty');
 
         // 1) Считаем суммы
-        $subtotal = $cart->items->sum('line_total_cents');
-        $shipping = 0;
-        $tax      = 0;
-        $total    = $subtotal + $shipping + $tax;
+
+        $promo = null;
+        if ($pid = $request->session()->get('checkout.promo.id')) {
+            $promo = \App\Models\PromoCode::find($pid);
+        }
+        $totals = $this->calcTotalsWithPromo($cart, $promo, $user->id);
 
         // 2) Создаём заказ (PENDING) и снапшоты позиций ДО Stripe
-        $order = DB::transaction(function () use ($request, $user, $cart, $subtotal, $shipping, $tax, $total) {
+        $order = DB::transaction(function () use ($request, $user, $cart,  $totals, $promo) {
             $order = Order::create([
                 'user_id'        => $user->id,
-                'status'         => Order::STATUS_PENDING, // явное указание
-                'currency'       => 'USD',
-                'subtotal_cents' => $subtotal,
-                'shipping_cents' => $shipping,
-                'tax_cents'      => $tax,
-                'total_cents'    => $total,
+                'status'         => Order::STATUS_PENDING,
+                'currency'       => $totals['currency'],
+                'subtotal_cents' => $totals['subtotal_cents'],
+                'shipping_cents' => $totals['shipping_cents'],
+                'tax_cents'      => $totals['tax_cents'],
+                'promo_code_id'  => $promo?->id,
+                'promo_discount_cents' => $totals['discount_cents'],
+                'total_cents'    => $totals['total_cents'],
                 'payment_method' => 'stripe',
                 'payment_id'     => null,
                 'placed_at'      => null,
@@ -287,7 +304,7 @@ class CheckoutController extends Controller
                 ],
             ]);
 
-            // снапшоты айтемов и опций (то, что у тебя было в success())
+
             foreach ($cart->items as $ci) {
                 $oi = $order->items()->create([
                     'product_id'        => $ci->product_id,
@@ -295,7 +312,7 @@ class CheckoutController extends Controller
                     'unit_price_cents'  => $ci->unit_price_cents,
                     'qty'               => $ci->qty,
                     'line_total_cents'  => $ci->line_total_cents,
-                    'status'            => \App\Models\OrderItem::STATUS_PENDING,
+                    'status'            => OrderItem::STATUS_PENDING,
                 ]);
 
                 foreach ($ci->options as $opt) {
@@ -351,10 +368,10 @@ class CheckoutController extends Controller
         });
 
         CartTools::clearUserCart($user->id);
-       DB::afterCommit(function () use ($order) {
-    Log::info('Broadcast OrderWorkflowUpdated (after create pending)', ['order_id' => $order->id]);
-    event(new \App\Events\OrderWorkflowUpdated($order->id));
-});
+        DB::afterCommit(function () use ($order) {
+            Log::info('Broadcast OrderWorkflowUpdated (after create pending)', ['order_id' => $order->id]);
+            event(new \App\Events\OrderWorkflowUpdated($order->id));
+        });
 
         // 3) Готовим line items для Stripe (как у тебя было)
         $optIds = $cart->items->flatMap(fn($ci) => $ci->options->pluck('option_value_id'))->filter()->unique()->values();
@@ -384,10 +401,10 @@ class CheckoutController extends Controller
 
             $nameBase = $ci->product->name . (count($parts) ? ' (' . implode(' | ', $parts) . ')' : '');
             $name     = $nameBase . ' x' . $ci->qty;
-
+            $currency = strtolower($totals['currency'] ?? 'USD');
             $lineItems[] = [
                 'price_data' => [
-                    'currency' => 'usd',
+                    'currency' => $currency,
                     'product_data' => [
                         'name' => $name,
                         // по желанию можно продублировать разметку сюда:
@@ -400,19 +417,52 @@ class CheckoutController extends Controller
         }
 
         $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
+        $discounts = [];
+        if ($promo && $totals['discount_cents'] > 0) {
+            // 1) попробуем использовать уже привязанный купон
+            $couponId = $promo->stripe_coupon_id;
 
-        /** @var \Stripe\Checkout\Session $session */
+            // 2) Если нет, создадим (duration = once)
+            if (!$couponId) {
+                if ($promo->type === 'percent') {
+                    $coupon = $stripe->coupons->create([
+                        'percent_off' => (float) $promo->value_percent,
+                        'duration'    => 'once',
+                        'name'        => $promo->code,
+                    ]);
+                } else {
+                    // amount_off должен знать валюту
+                    $coupon = $stripe->coupons->create([
+                        'amount_off' => $promo->value_cents, // в центах
+                        'currency'   => $currency,              // подставь, если нужна другая валюта
+                        'duration'   => 'once',
+                        'name'       => $promo->code,
+                    ]);
+                }
+                $promo->update([
+                    'stripe_coupon_id'        => $coupon->id,
+                    'stripe_coupon_currency' => $promo->type === 'amount' ? $currency : null,
+                ]);
+                $couponId = $coupon->id;
+            }
+
+            $discounts = [['coupon' => $couponId]];
+        }
+
+        // Создание Checkout Session
         $session = $stripe->checkout->sessions->create([
-            'mode' => 'payment',
-            'payment_method_types' => ['card'],
-            'line_items' => $lineItems,
-            'success_url' => route('checkout.success') . '?session_id={CHECKOUT_SESSION_ID}',
-            'cancel_url'  => route('checkout.cancel'),
-            'metadata'    => [
+            'mode'                   => 'payment',
+            'payment_method_types'   => ['card'],
+            'line_items'             => $lineItems, // как у тебя
+            'discounts'              => $discounts, // ← Stripe сам применит скидку
+            'success_url'            => route('checkout.success') . '?session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url'             => route('checkout.cancel'),
+            'metadata'               => [
                 'user_id'  => (string) $user->id,
-                'order_id' => (string) $order->id, // удобно на вебхуке
+                'order_id' => (string) $order->id,
             ],
         ]);
+
 
         // 4) Сохраняем связь заказа с сессией Stripe
         $order->update([
@@ -435,9 +485,10 @@ class CheckoutController extends Controller
     {
         $sessionId = (string) $request->query('session_id');
         abort_unless($sessionId, 400, 'Missing session_id');
-
+        $request->session()->forget('checkout.promo');
         $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
-        $session = $stripe->checkout->sessions->retrieve($sessionId, []);
+
+        
 
         // Попробуем найти заказ по session_id
         $order = Order::where('checkout_session_id', $sessionId)->first();
@@ -459,5 +510,77 @@ class CheckoutController extends Controller
     {
         // пользователь отменил оплату на Stripe
         return redirect()->route('checkout.index')->with('error', 'Payment was cancelled.');
+    }
+
+    private function calcTotalsWithPromo(\App\Models\Cart $cart, ?\App\Models\PromoCode $promo, ?int $userId): array
+    {
+        $subtotal = (int) $cart->items->sum('line_total_cents');
+        $shipping = 0;
+        $tax      = 0;
+
+        $discount = 0;
+        if ($promo) {
+            [$ok] = $promo->isApplicable($userId, $subtotal);
+            if ($ok) {
+                $discount = $promo->computeDiscountCents($subtotal);
+            }
+        }
+
+        $total = max(0, $subtotal + $shipping + $tax - $discount);
+
+        return [
+            'subtotal_cents' => $subtotal,
+            'shipping_cents' => $shipping,
+            'tax_cents'      => $tax,
+            'discount_cents' => $discount,
+            'total_cents'    => $total,
+            'currency'       => 'USD',
+        ];
+    }
+
+    public function applyPromo(Request $request)
+    {
+        $request->validate(['code' => ['required', 'string', 'max:64']]);
+        $code = (string) $request->string('code')->trim()->upper();
+
+        $promo = \App\Models\PromoCode::where('code', $code)->first();
+        if (!$promo) return response()->json(['ok' => false, 'message' => 'Promo code not found'], 404);
+
+        $cart = \App\Models\Cart::firstOrCreate(['user_id' => $request->user()->id])->load('items');
+        if ($cart->items->isEmpty()) return response()->json(['ok' => false, 'message' => 'Cart is empty'], 422);
+
+        [$ok, $reason] = $promo->isApplicable($request->user()->id, (int) $cart->items->sum('line_total_cents'));
+        if (!$ok) return response()->json(['ok' => false, 'message' => $reason ?? 'Code is not applicable'], 422);
+
+        // Сохраняем в сессию
+        $request->session()->put('checkout.promo', [
+            'code'  => $promo->code,
+            'id'    => $promo->id,
+        ]);
+
+        $totals = $this->calcTotalsWithPromo($cart, $promo, $request->user()->id);
+
+        return response()->json([
+            'ok' => true,
+            'promo' => [
+                'code' => $promo->code,
+                'discount_cents' => $totals['discount_cents'],
+            ],
+            'totals' => $totals,
+        ]);
+    }
+
+    public function removePromo(Request $request)
+    {
+        $request->session()->forget('checkout.promo');
+        $cart = \App\Models\Cart::firstOrCreate(['user_id' => $request->user()->id])->load('items');
+
+        $totals = $this->calcTotalsWithPromo($cart, null, $request->user()->id);
+
+        return response()->json([
+            'ok' => true,
+            'promo' => null,
+            'totals' => $totals,
+        ]);
     }
 }

@@ -28,6 +28,8 @@ class Order extends Model
         'shipping_cents',
         'tax_cents',
         'total_cents',
+        'promo_code_id',
+        'promo_discount_cents',
         'payment_method',
         'payment_id',
         'placed_at',
@@ -46,8 +48,6 @@ class Order extends Model
         'refunded_at'      => 'datetime',
         'billing_address'  => 'array',
         'game_payload'     => 'array',
-        'completed_at'     => 'datetime',
-        'refunded_at'      => 'datetime',
         'delivery_seconds' => 'integer',
     ];
 
@@ -66,58 +66,58 @@ class Order extends Model
     }
 
     public function syncStatusFromItems(): string
-{
-    $statuses = $this->items()->pluck('status')->all();
-    if (!$statuses) {
-        return $this->status;
-    }
+    {
+        $statuses = $this->items()->pluck('status')->all();
+        if (!$statuses) {
+            return $this->status;
+        }
 
-    $allCompleted  = collect($statuses)->every(fn($s) => $s === OrderItem::STATUS_COMPLETED);
-    $anyInProgress = in_array(OrderItem::STATUS_IN_PROGRESS, $statuses, true);
-    $anyPaid       = in_array(OrderItem::STATUS_PAID,        $statuses, true);
-    $hasRefund     = in_array(OrderItem::STATUS_REFUND,      $statuses, true);
+        $allCompleted  = collect($statuses)->every(fn($s) => $s === OrderItem::STATUS_COMPLETED);
+        $anyInProgress = in_array(OrderItem::STATUS_IN_PROGRESS, $statuses, true);
+        $anyPaid       = in_array(OrderItem::STATUS_PAID,        $statuses, true);
+        $hasRefund     = in_array(OrderItem::STATUS_REFUND,      $statuses, true);
 
-    $new = match (true) {
-        $hasRefund     => self::STATUS_REFUND,
-        $allCompleted  => self::STATUS_COMPLETED,
-        $anyInProgress => self::STATUS_IN_PROGRESS,
-        $anyPaid       => self::STATUS_PAID,
-        default        => self::STATUS_PENDING,
-    };
+        $new = match (true) {
+            $hasRefund     => self::STATUS_REFUND,
+            $allCompleted  => self::STATUS_COMPLETED,
+            $anyInProgress => self::STATUS_IN_PROGRESS,
+            $anyPaid       => self::STATUS_PAID,
+            default        => self::STATUS_PENDING,
+        };
 
-    // если статус не меняется — но заказ уже completed и delivery_seconds ещё не посчитан/некорректен
-    if ($new === $this->status) {
-    if ($new === self::STATUS_COMPLETED && $this->completed_at && (is_null($this->delivery_seconds) || $this->delivery_seconds <= 0)) {
-        $from = $this->paid_at ?: $this->created_at;
-        $to   = $this->completed_at;
-        $this->delivery_seconds = ($from && $to)
-            ? max(0, $to->getTimestamp() - $from->getTimestamp())
-            : null;
+        // если статус не меняется — но заказ уже completed и delivery_seconds ещё не посчитан/некорректен
+        if ($new === $this->status) {
+            if ($new === self::STATUS_COMPLETED && $this->completed_at && (is_null($this->delivery_seconds) || $this->delivery_seconds <= 0)) {
+                $from = $this->paid_at ?: $this->created_at;
+                $to   = $this->completed_at;
+                $this->delivery_seconds = ($from && $to)
+                    ? max(0, $to->getTimestamp() - $from->getTimestamp())
+                    : null;
+                $this->save();
+            }
+            return $new;
+        }
+        // применяем новый статус + системные даты
+        $this->status = $new;
+
+        if ($new === self::STATUS_PAID && !$this->paid_at) {
+            $this->paid_at = now();
+        }
+
+        if ($new === self::STATUS_COMPLETED) {
+            if (!$this->completed_at) {
+                $this->completed_at = now();
+            }
+            $from = $this->paid_at ?: $this->created_at; // старт: paid или created (pending)
+            $to   = $this->completed_at;
+            $this->delivery_seconds = ($from && $to)
+                ? max(0, $to->getTimestamp() - $from->getTimestamp())
+                : null;
+        }
+
         $this->save();
+        return $new;
     }
-    return $new;
-}
-    // применяем новый статус + системные даты
-    $this->status = $new;
-
-    if ($new === self::STATUS_PAID && !$this->paid_at) {
-        $this->paid_at = now();
-    }
-
-    if ($new === self::STATUS_COMPLETED) {
-    if (!$this->completed_at) {
-        $this->completed_at = now();
-    }
-    $from = $this->paid_at ?: $this->created_at; // старт: paid или created (pending)
-    $to   = $this->completed_at;
-    $this->delivery_seconds = ($from && $to)
-        ? max(0, $to->getTimestamp() - $from->getTimestamp())
-        : null;
-}
-
-    $this->save();
-    return $new;
-}
 
 
 
@@ -129,7 +129,7 @@ class Order extends Model
     {
         $items = $this->items()->get();
 
-        $workItems = $items->where('status', '!=', 'refund');
+        $workItems = $items->where('status', '!=', OrderItem::STATUS_REFUND);
         $saleSum   = (int) $workItems->sum('line_total_cents');
         $costSum   = (int) $workItems->sum(fn($i) => (int) ($i->cost_cents ?? 0));
         $profitSum = (int) $workItems->sum(function ($i) {
@@ -175,5 +175,14 @@ class Order extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    public function promoCode(): BelongsTo
+    {
+        return $this->belongsTo(PromoCode::class);
+    }
+    public function promoRedemptions(): HasMany
+    {
+        return $this->hasMany(PromoRedemption::class);
     }
 }

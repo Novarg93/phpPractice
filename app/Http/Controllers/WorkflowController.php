@@ -44,7 +44,7 @@ class WorkflowController extends Controller
         $cItem  = $r->input('cursor.id');
 
         $itemsQ = \App\Models\OrderItem::query()
-            ->with(['order.user', 'product.optionGroups', 'options'])
+            ->with(['order.user', 'order.promoCode', 'product.optionGroups', 'options'])
             ->whereIn('status', $statuses)
             ->orderByDesc('order_id')
             ->orderByDesc('id');
@@ -226,7 +226,7 @@ class WorkflowController extends Controller
 
             event(new \App\Events\OrderWorkflowUpdated($order->id));
 
-            $refreshed = $this->mapItem($item->fresh(['order.user', 'product', 'options']));
+            $refreshed = $this->mapItem($item->fresh(['order.user', 'order.promoCode', 'product.optionGroups', 'options']));
             return response()->json(['item' => $refreshed]);
         });
     }
@@ -236,7 +236,7 @@ class WorkflowController extends Controller
     private function fetchItems(): array
     {
         $items = \App\Models\OrderItem::query()
-            ->with(['order.user', 'product.optionGroups', 'options'])
+            ->with(['order.user', 'order.promoCode', 'product.optionGroups', 'options'])
             // Вариант А (по заказам и внутри по item): порядок читается блоками по ордерам
             ->orderBy('order_id', 'desc')
             ->orderBy('id', 'asc')
@@ -254,6 +254,21 @@ class WorkflowController extends Controller
         $user    = $order?->user;
         $payload = $order?->game_payload ?? [];
         $nickname = $payload['nickname'] ?? $payload['character'] ?? null;
+        $subtotalCents = (int) ($order->subtotal_cents ?? 0);
+        $orderDiscountCents = (int) ($order->promo_discount_cents ?? 0);
+
+        $lineCents = (int) ($i->line_total_cents ?? 0);
+        $allocDiscount = 0;
+        if (
+            $orderDiscountCents > 0 &&
+            $subtotalCents > 0 &&
+            $i->status !== OrderItem::STATUS_REFUND
+        ) {
+
+            $allocDiscount = intdiv($lineCents * $orderDiscountCents, $subtotalCents);
+        }
+
+        $netLineCents = max(0, $lineCents - $allocDiscount);
 
         $dt = $order?->paid_at ?? $order?->placed_at ?? $order?->created_at;
 
@@ -273,8 +288,16 @@ class WorkflowController extends Controller
             'has_qty_slider' => $hasQtySlider,                                   // ⬅️
 
             'cost_price'     => $i->cost_cents !== null ? round($i->cost_cents / 100, 2) : null,
-            'sale_price'     => round(($i->line_total_cents ?? 0) / 100, 2),
-            'profit'         => $i->profit_cents !== null ? round($i->profit_cents / 100, 2) : null,
+            'sale_price_gross' => round($lineCents / 100, 2),
+            'sale_price'       => round($netLineCents / 100, 2),       // нетто с учётом скидки
+            'discount'         => round($allocDiscount / 100, 2),
+            'profit_net'       => $i->cost_cents !== null
+                ? round(($netLineCents - (int) $i->cost_cents) / 100, 2)
+                : null,
+
+            // инфо по заказу:
+            'order_discount'   => round($orderDiscountCents / 100, 2),
+            'promo_code'       => $order?->promoCode?->code,
             'margin_percent' => $i->margin_bp !== null ? round($i->margin_bp / 100, 2) : null,
             'status'         => $i->status,
             'order_status'   => $order?->status,
@@ -422,7 +445,7 @@ class WorkflowController extends Controller
                 $item->save();
 
                 $orderIds[$item->order_id] = true;
-                $result[] = $item->fresh(['order.user', 'product', 'options']);
+                $result[] = $item->fresh(['order.user', 'product', 'options','product.optionGroups']);
             }
 
             foreach (array_keys($orderIds) as $oid) {

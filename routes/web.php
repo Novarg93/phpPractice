@@ -70,6 +70,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     ->name('orders.pay');
     Route::post('/checkout/test-pending', [CheckoutController::class, 'createTestPending'])
     ->name('checkout.testPending');
+     Route::post('/checkout/promo/apply',  [CheckoutController::class, 'applyPromo'])->name('checkout.promo.apply');
+    Route::post('/checkout/promo/remove', [CheckoutController::class, 'removePromo'])->name('checkout.promo.remove');
 });
 
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])->name('stripe.webhook');
