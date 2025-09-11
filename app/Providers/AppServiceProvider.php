@@ -28,7 +28,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
-
+    Inertia::share('social', fn () => [
+    'telegram_bot' => env('TELEGRAM_BOT_USERNAME'),
+]);
         
     Inertia::share('pages', fn () =>
         Schema::hasTable('pages')

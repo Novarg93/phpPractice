@@ -12,10 +12,13 @@ use App\Http\Controllers\{
     PostController,
     ContactController,
     StripeWebhookController,
-    WorkflowController
+    WorkflowController,
+    DiscordOAuthController,
+    TelegramLinkController,
+    TelegramAuthController
 };
 use Illuminate\Foundation\Application;
-
+use Illuminate\Support\Facades\Http;
 
 
 use Illuminate\Support\Facades\Route;
@@ -44,6 +47,9 @@ Route::middleware(['auth', 'verified', 'can:workflow'])->group(function () {
     ->name('workflow.items.bulk');
 });
 
+
+
+
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard'))->name('dashboard');
 
@@ -55,6 +61,22 @@ Route::middleware(['auth'])->group(function () {
     // Orders (доступны без verified)
     Route::get('/profile/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/profile/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
+
+    Route::get('/auth/discord/redirect', [DiscordOAuthController::class, 'redirect'])
+        ->name('social.discord.redirect');
+    Route::get('/auth/discord/callback', [DiscordOAuthController::class, 'callback'])
+        ->name('social.discord.callback');
+    Route::delete('/auth/discord/unlink', [DiscordOAuthController::class, 'unlink'])
+        ->name('social.discord.unlink');
+
+    // Telegram: генерим/обновляем код, отвязываем
+     Route::get('/auth/telegram/callback', [TelegramAuthController::class, 'callback'])
+        ->name('social.telegram.callback');
+    Route::delete('/social/telegram/unlink', [TelegramAuthController::class, 'unlink'])
+        ->name('social.telegram.unlink');
+
+
+
 });
 
 /**
@@ -72,7 +94,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     ->name('checkout.testPending');
      Route::post('/checkout/promo/apply',  [CheckoutController::class, 'applyPromo'])->name('checkout.promo.apply');
     Route::post('/checkout/promo/remove', [CheckoutController::class, 'removePromo'])->name('checkout.promo.remove');
+    
 });
+
+
+
+    
 
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])->name('stripe.webhook');
 

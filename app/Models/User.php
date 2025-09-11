@@ -60,6 +60,16 @@ class User extends Authenticatable implements MustVerifyEmail
         });
     }
 
+     protected function discordAvatarUrl(): Attribute
+    {
+        return Attribute::get(function ($value, $attributes) {
+            if (!empty($attributes['discord_user_id']) && !empty($attributes['discord_avatar'])) {
+                return "https://cdn.discordapp.com/avatars/{$attributes['discord_user_id']}/{$attributes['discord_avatar']}.png?size=128";
+            }
+            return null;
+        });
+    }
+
     protected $hidden = ['password', 'remember_token'];
 
     protected function casts(): array

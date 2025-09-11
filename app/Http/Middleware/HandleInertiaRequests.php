@@ -35,8 +35,9 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'flash' => [
-                'success' => fn() => $request->session()->get('success'),
-                'error' => fn() => $request->session()->get('error'),
+                'toast'       => fn() => $request->session()->get('toast'),
+                'tg_code'     => fn() => $request->session()->get('tg_code'),
+                'tg_deeplink' => fn() => $request->session()->get('tg_deeplink'),
             ],
         ];
     }

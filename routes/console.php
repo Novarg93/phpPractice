@@ -1,33 +1,59 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
-use App\Models\Order;
 
-Artisan::command('orders:delivery:recalc {--dry}', function () {
-    $q = Order::where('status', 'completed');
-    $total = $q->count();
-    $bar = $this->output->createProgressBar($total);
-    $bar->start();
+Artisan::command('user:discord {--id=} {--email=}', function () {
+    $id    = $this->option('id');
+    $email = $this->option('email');
 
-    $updated = 0;
-    $q->chunkById(200, function ($chunk) use (&$updated, $bar) {
-        foreach ($chunk as $o) {
-            $from = $o->paid_at ?: $o->created_at;     // старт: paid или created
-            $to   = $o->completed_at ?: now();         // финиш: completed или now
-            $calc = ($from && $to) ? max(0, $to->getTimestamp() - $from->getTimestamp()) : null;
+    $user = null;
+    if ($id)    $user = User::find($id);
+    if (!$user && $email) $user = User::where('email', $email)->first();
 
-            if ($o->delivery_seconds !== $calc) {
-                if (!$this->option('dry')) {
-                    $o->delivery_seconds = $calc;
-                    $o->save();
-                }
-                $updated++;
-            }
-            $bar->advance();
-        }
-    });
+    if (!$user) {
+        $this->error('User not found. Use --id= or --email=');
+        return 1;
+    }
 
-    $bar->finish();
-    $this->newLine(2);
-    $this->info("Updated: {$updated}" . ($this->option('dry') ? ' (dry-run)' : ''));
-})->describe('Recalculate delivery_seconds for all completed orders.');
+    $avatarUrl = ($user->discord_user_id && $user->discord_avatar)
+        ? "https://cdn.discordapp.com/avatars/{$user->discord_user_id}/{$user->discord_avatar}.png?size=128"
+        : null;
+
+    $this->table(
+        ['id','email','discord_user_id','discord_username','discord_avatar','discord_avatar_url'],
+        [[
+            $user->id,
+            $user->email,
+            $user->discord_user_id ?? '—',
+            $user->discord_username ?? '—',
+            $user->discord_avatar ?? '—',
+            $avatarUrl ?? '—',
+        ]]
+    );
+
+    return 0;
+})->describe('Show Discord fields for a user by --id or --email');
+
+Artisan::command('user:discord:unlink {--id=} {--email=}', function () {
+    $id    = $this->option('id');
+    $email = $this->option('email');
+
+    $user = null;
+    if ($id)    $user = User::find($id);
+    if (!$user && $email) $user = User::where('email', $email)->first();
+
+    if (!$user) {
+        $this->error('User not found. Use --id= or --email=');
+        return 1;
+    }
+
+    $user->forceFill([
+        'discord_user_id' => null,
+        'discord_username' => null,
+        'discord_avatar' => null,
+    ])->save();
+
+    $this->info("Discord unlinked for user #{$user->id} ({$user->email}).");
+    return 0;
+})->describe('Unlink Discord for a user by --id or --email');
