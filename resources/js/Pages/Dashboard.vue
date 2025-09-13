@@ -131,7 +131,7 @@ const resendVerification = () => {
       <!-- Social links -->
       <div class="grid md:grid-cols-2 gap-6 mt-10">
         <!-- Discord card -->
-        <div class="rounded-2xl border p-5 bg-card text-card-foreground shadow-sm">
+        <div class="rounded-2xl border p-5 bg-card text-card-foreground shadow-sm border-border">
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center gap-3">
               <img
@@ -181,7 +181,7 @@ const resendVerification = () => {
 
         <!-- Telegram card (без аватарки) -->
         <div
-          class="rounded-2xl border p-5 bg-card text-card-foreground shadow-sm"
+          class="rounded-2xl border p-5 bg-card text-card-foreground shadow-sm border-border"
           :key="(isTelegramLinked ? 'tg-linked' : 'tg-unlinked') + ':' + (user?.telegram_user_id || '')"
         >
           <div class="flex items-center justify-between mb-4">

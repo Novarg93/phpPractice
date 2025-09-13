@@ -14,7 +14,7 @@ use App\Http\Controllers\{
     StripeWebhookController,
     WorkflowController,
     DiscordOAuthController,
-    TelegramLinkController,
+    SearchController,
     TelegramAuthController
 };
 use Illuminate\Foundation\Application;
@@ -104,7 +104,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 
     
-
+Route::post('/search', SearchController::class)->name('search');
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])->name('stripe.webhook');
 
 // Cart (гостям доступен)

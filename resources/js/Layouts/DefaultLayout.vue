@@ -28,6 +28,7 @@ import { Button } from "@/Components/ui/button";
 import { Separator } from "@/Components/ui/separator";
 import { ShoppingCart } from "lucide-vue-next";
 import { ChevronsDown, Menu, X } from "lucide-vue-next";
+import GlobalSearch from '@/Components/GlobalSearch.vue'
 
 const { summary, loadSummary } = useCartSummary()
 
@@ -58,12 +59,13 @@ onMounted(() => loadSummary())
             <Link :href="route('home')" class="font-bold text-lg flex items-center">
             <ChevronsDown
                 class="bg-gradient-to-tr from-primary via-primary/70 to-primary rounded-lg w-9 h-9 mr-2 border border-transparent text-white" />
-            ShadcnVue
+            
             </Link>
             <!-- Mobile -->
-
+            
             <Drawer direction="left" v-model:open="isOpen">
                 <DrawerTrigger class="lg:hidden" as-child>
+                    
                     <Button variant="ghost">
                         <Menu />
                     </Button>
@@ -126,10 +128,15 @@ onMounted(() => loadSummary())
                     <li>
                         <Link class="hover:underline " :href="route('contact.show')">Contact Us</Link>
                     </li>
+                    <GlobalSearch />
+                    
                 </ul>
             </nav>
 
+            
+            
             <div class="hidden lg:flex pr-2 xl:pr-4 gap-6">
+                
                 <div class="flex items-center gap-4 ">
                     <span v-if="summary.total_qty">{{ formatPrice(summary.total_sum_cents) }}</span>
                     <a href="/cart" class="relative">
