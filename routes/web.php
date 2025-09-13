@@ -71,9 +71,13 @@ Route::middleware(['auth'])->group(function () {
 
     // Telegram: генерим/обновляем код, отвязываем
      Route::get('/auth/telegram/callback', [TelegramAuthController::class, 'callback'])
-        ->name('social.telegram.callback');
-    Route::delete('/social/telegram/unlink', [TelegramAuthController::class, 'unlink'])
-        ->name('social.telegram.unlink');
+    ->name('social.telegram.callback');
+Route::delete('/social/telegram/unlink', [TelegramAuthController::class, 'unlink'])
+    ->name('social.telegram.unlink');
+
+// опционально:
+Route::post('/social/telegram/refresh-avatar', [TelegramAuthController::class, 'refreshAvatar'])
+    ->name('social.telegram.refreshAvatar');
 
 
 
