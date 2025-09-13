@@ -12,8 +12,10 @@
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/framework": "^12.0",
         "laravel/sanctum": "^4.0",
+        "laravel/socialite": "^5.23",
         "laravel/tinker": "^2.10.1",
         "pusher/pusher-php-server": "7.2",
+        "socialiteproviders/discord": "^4.2",
         "stripe/stripe-php": "^17.5",
         "tightenco/ziggy": "^2.0"
     },

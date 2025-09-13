@@ -38,16 +38,20 @@ Route::middleware(['auth', 'verified', 'can:workflow'])
     ->name('workflow.index');
 
 
-    
+
 Route::middleware(['auth', 'verified', 'can:workflow'])->group(function () {
     Route::get('/workflow', [WorkflowController::class, 'index'])->name('workflow.index');
     Route::get('/workflow/list', [WorkflowController::class, 'list'])->name('workflow.list'); // JSON для автообновления
     Route::patch('/workflow/item/{item}', [WorkflowController::class, 'update'])->name('workflow.item.update'); // инлайн-апдейты
     Route::patch('/workflow/items/bulk', [\App\Http\Controllers\WorkflowController::class, 'bulkUpdate'])
-    ->name('workflow.items.bulk');
+        ->name('workflow.items.bulk');
 });
 
 
+Route::get('/auth/discord/redirect', [DiscordOAuthController::class, 'redirect'])
+    ->name('social.discord.redirect');
+Route::get('/auth/discord/callback', [DiscordOAuthController::class, 'callback'])
+    ->name('social.discord.callback');
 
 
 Route::middleware(['auth'])->group(function () {
@@ -62,25 +66,18 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/profile/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/profile/orders/{order}', [OrderController::class, 'show'])->name('orders.show');
 
-    Route::get('/auth/discord/redirect', [DiscordOAuthController::class, 'redirect'])
-        ->name('social.discord.redirect');
-    Route::get('/auth/discord/callback', [DiscordOAuthController::class, 'callback'])
-        ->name('social.discord.callback');
-    Route::delete('/auth/discord/unlink', [DiscordOAuthController::class, 'unlink'])
-        ->name('social.discord.unlink');
+
 
     // Telegram: генерим/обновляем код, отвязываем
-     Route::get('/auth/telegram/callback', [TelegramAuthController::class, 'callback'])
-    ->name('social.telegram.callback');
-Route::delete('/social/telegram/unlink', [TelegramAuthController::class, 'unlink'])
-    ->name('social.telegram.unlink');
-
-// опционально:
-Route::post('/social/telegram/refresh-avatar', [TelegramAuthController::class, 'refreshAvatar'])
-    ->name('social.telegram.refreshAvatar');
-
-
-
+    Route::get('/auth/telegram/callback', [TelegramAuthController::class, 'callback'])
+        ->name('social.telegram.callback');
+    Route::delete('/social/telegram/unlink', [TelegramAuthController::class, 'unlink'])
+        ->name('social.telegram.unlink');
+    Route::delete('/auth/discord/unlink', [DiscordOAuthController::class, 'unlink'])
+    ->name('social.discord.unlink');
+    // опционально:
+    Route::post('/social/telegram/refresh-avatar', [TelegramAuthController::class, 'refreshAvatar'])
+        ->name('social.telegram.refreshAvatar');
 });
 
 /**
@@ -93,17 +90,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/checkout/success', [CheckoutController::class, 'success'])->name('checkout.success');
     Route::get('/checkout/cancel',  [CheckoutController::class, 'cancel'])->name('checkout.cancel');
     Route::post('/profile/orders/{order}/pay', [OrderController::class, 'pay'])
-    ->name('orders.pay');
+        ->name('orders.pay');
     Route::post('/checkout/test-pending', [CheckoutController::class, 'createTestPending'])
-    ->name('checkout.testPending');
-     Route::post('/checkout/promo/apply',  [CheckoutController::class, 'applyPromo'])->name('checkout.promo.apply');
+        ->name('checkout.testPending');
+    Route::post('/checkout/promo/apply',  [CheckoutController::class, 'applyPromo'])->name('checkout.promo.apply');
     Route::post('/checkout/promo/remove', [CheckoutController::class, 'removePromo'])->name('checkout.promo.remove');
-    
 });
 
 
 
-    
+
 Route::post('/search', SearchController::class)->name('search');
 Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])->name('stripe.webhook');
 
@@ -128,7 +124,7 @@ Route::get('/games', [GameController::class, 'index'])->name('games.index');
 
 Route::post('/checkout/nickname', [CheckoutController::class, 'saveNickname'])->name('checkout.nickname');
 Route::post('/orders/{order}/nickname', [OrderController::class, 'saveNickname'])
-    ->middleware(['auth', 'throttle:10,1']) 
+    ->middleware(['auth', 'throttle:10,1'])
     ->name('orders.nickname');
 
 Route::scopeBindings()->group(function () {

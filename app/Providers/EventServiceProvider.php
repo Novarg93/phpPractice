@@ -12,5 +12,8 @@ class EventServiceProvider extends ServiceProvider
         Login::class => [
             MergeCartOnLogin::class,
         ],
+        \SocialiteProviders\Manager\SocialiteWasCalled::class => [
+        \SocialiteProviders\Discord\DiscordExtendSocialite::class.'@handle',
+    ],
     ];
 }

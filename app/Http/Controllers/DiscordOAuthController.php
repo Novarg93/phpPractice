@@ -2,136 +2,165 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\AbstractProvider;
 
 class DiscordOAuthController extends Controller
 {
-    /**
-     * Вспомогательный клиент с настройками под Windows (IPv4, TLS1.2, таймауты, ретраи).
-     */
-    protected function httpClient(array $extra = [])
-{
-    return \Illuminate\Support\Facades\Http::withHeaders([
-            'User-Agent' => 'Carryforce-Laravel/1.0 (+https://carryforce.local)',
-        ])
-        ->timeout(20)
-        ->retry(1, 300)
-        ->withOptions(array_merge([
-            'verify' => base_path('cacert.pem'), // или абсолютный путь, типа C:\php\extras\ssl\cacert.pem
-            'proxy'  => '', // отключаем наследованный системный прокси на всякий
-            'curl' => [
-                CURLOPT_IPRESOLVE     => CURL_IPRESOLVE_V4,
-                CURLOPT_SSLVERSION    => CURL_SSLVERSION_TLSv1_2,
-                CURLOPT_HTTP_VERSION  => CURL_HTTP_VERSION_1_1, // выключаем HTTP/2 — с Cloudflare иногда решает
-            ],
-        ], $extra));
-}
-
-    public function redirect(Request $r): RedirectResponse
+    // Шаг 1: уводим на Discord
+    public function redirect(Request $request)
     {
-        // генерируем и сохраняем state в сессии
-        $state = bin2hex(random_bytes(16));
-        $r->session()->put('discord_oauth_state', $state);
+        /** @var AbstractProvider $provider */        // ← подсказка для Intelephense
+        $provider = Socialite::driver('discord');
 
-        $params = [
-            'client_id'     => config('services.discord.client_id'),
-            'redirect_uri'  => config('services.discord.redirect'),
-            'response_type' => 'code',
-            'scope'         => 'identify',
-            'state'         => $state,
-            'prompt'        => 'consent',
-        ];
-
-        $authorizeUrl = config('services.discord.authorize_url') . '?' . http_build_query($params);
-
-        return redirect()->away($authorizeUrl);
+        return $provider
+            ->scopes(['identify', 'email'])           // ← теперь IDE знает про метод
+            ->redirect();
     }
 
-    public function callback(Request $r)
+    // Шаг 2: колбэк от Discord
+    public function callback(Request $request)
     {
-        // 1) базовые проверки
-        $code  = (string) $r->query('code', '');
-        $state = (string) $r->query('state', '');
-        abort_unless($code !== '', 400, 'Missing code');
+        try {
+            /** @var AbstractProvider $provider */    // ← подсказка для Intelephense
+            $provider = Socialite::driver('discord');
 
-        // сверяем state
-        $savedState = (string) $r->session()->pull('discord_oauth_state', '');
-    if ($savedState === '' || !hash_equals($savedState, $state)) {
-        Log::warning('Discord OAuth invalid state', ['got' => $state, 'expected' => $savedState]);
-        return redirect()->route('dashboard')->with('toast', 'Discord: невалидный state, попробуй ещё раз.');
+            $discord = $provider->stateless()->user(); // ← и про stateless() тоже знает
+        } catch (\Throwable $e) {
+            Log::warning('Discord OAuth callback failed', ['e' => $e->getMessage()]);
+            return redirect()->route('login')->with('status', 'Discord login failed. Try again.');
+        }
+
+        // Поля из Discord / Socialite
+        $discordId   = (string) $discord->getId();             // Snowflake ID
+        $email       = $discord->getEmail();                   // может быть null
+        $name        = $discord->getName();                    // может быть null
+        $nickname    = $discord->getNickname();                // может быть null
+        $raw         = $discord->user ?? [];                   // «сырой» массив с полями Discord
+        $username    = $raw['username']     ?? $nickname ?? $name ?? null;
+        $globalName  = $raw['global_name']  ?? null;  // новый глобальный ник
+        $discriminator = $raw['discriminator'] ?? null; // часто '0' в новых аккаунтах
+        $avatarHash  = $raw['avatar']       ?? null;   // хэш аватара (без URL)
+
+        // Нормализуем отображаемое имя
+        $displayName = $globalName ?: $username ?: $name ?: ('discord_' . $discordId);
+
+        if (Auth::check()) {
+            // ==== LINK FLOW: пользователь залогинен — привязываем ====
+            $user = $request->user();
+
+            // Запретим привязку одного Discord к разным аккаунтам
+            $exists = User::where('discord_user_id', $discordId)
+                ->where('id', '!=', $user->id)
+                ->first();
+
+            if ($exists) {
+                return redirect()->route('dashboard')
+                    ->with('toast', 'Этот Discord уже привязан к другому аккаунту.');
+            }
+
+            $user->discord_user_id = $discordId;
+            $user->discord_username = $username ?? $displayName;
+            $user->discord_avatar = $avatarHash; // храним hash; URL соберёшь на фронте
+            $user->save();
+
+            return redirect()->route('dashboard')->with('toast', 'Discord успешно привязан.');
+        }
+
+        // ==== GUEST FLOW: пользователь гость — логиним/создаём ====
+
+        // 1) Если уже есть аккаунт с таким discord_user_id — логиним его
+        $user = User::where('discord_user_id', $discordId)->first();
+        if ($user) {
+            Auth::login($user, true);
+            return redirect()->intended(route('dashboard'));
+        }
+
+        // 2) Если есть email и он совпадает с существующим пользователем — привязываем к нему
+        if ($email) {
+            $userByEmail = User::where('email', $email)->first();
+            if ($userByEmail) {
+                // Если у этого аккаунта уже был другой Discord — опционально можно запретить/попросить отвязать
+                if ($userByEmail->discord_user_id && $userByEmail->discord_user_id !== $discordId) {
+                    return redirect()->route('login')->with('status', 'Этот email уже связан с другим Discord.');
+                }
+
+                $userByEmail->discord_user_id = $discordId;
+                $userByEmail->discord_username = $username ?? $displayName;
+                $userByEmail->discord_avatar = $avatarHash;
+
+                // Если у Discord почта верифицирована, можно отметить email_verified_at
+                $verified = (bool) ($raw['verified'] ?? false);
+                if ($verified && !$userByEmail->email_verified_at) {
+                    $userByEmail->email_verified_at = now();
+                }
+
+                $userByEmail->save();
+
+                Auth::login($userByEmail, true);
+                return redirect()->intended(route('dashboard'));
+            }
+        }
+
+        // 3) Иначе — создаём нового пользователя
+        $generatedEmail = $email ?: ("discord_{$discordId}@example.invalid");
+        $baseName = $displayName;
+
+        // гарантируем уникальность name
+        $uniqueName = $this->uniqueName($baseName);
+
+        $user = User::create([
+            'name'  => $uniqueName,
+            'email' => $generatedEmail,
+            'password' => bcrypt(Str::random(32)), // случайный пароль
+            'full_name' => $displayName,
+            'role' => User::ROLE_USER,
+            'discord_user_id' => $discordId,
+            'discord_username' => $username ?? $displayName,
+            'discord_avatar' => $avatarHash,
+            // Email сразу верифицируем ТОЛЬКО если пришёл реальный email и verified=true
+            'email_verified_at' => ($email && ($raw['verified'] ?? false)) ? now() : null,
+        ]);
+
+        Auth::login($user, true);
+        return redirect()->intended(route('dashboard'));
     }
 
-        $http = $this->httpClient()->asForm();
+    // Отвязка
+    public function unlink(Request $request)
+    {
+        $user = $request->user();
 
-        // 2) обмен кода на токен
-        try {
-            $tokenResp = $http->post(config('services.discord.token_url'), [
-                'client_id'     => config('services.discord.client_id'),
-                'client_secret' => config('services.discord.client_secret'),
-                'grant_type'    => 'authorization_code',
-                'code'          => (string) $code,
-                'redirect_uri'  => config('services.discord.redirect'),
-            ]);
-        } catch (ConnectionException $e) {
-            Log::error('Discord token HTTP failed', ['e' => $e->getMessage()]);
-            return redirect()->route('dashboard')
-                ->with('toast', 'Discord: нет соединения (timeout). Проверь интернет/фаервол и попробуй ещё раз.');
-        }
-
-        if (!$tokenResp->ok()) {
-            // частый кейс: invalid_grant (устаревший/повторно использованный code)
-            $err = $tokenResp->json('error') ?? $tokenResp->status();
-            Log::warning('Discord token exchange failed', ['error' => $tokenResp->json(), 'status' => $tokenResp->status()]);
-            return redirect()->route('dashboard')
-                ->with('toast', "Discord OAuth ошибка: {$err}. Нажми «Link Discord» ещё раз.");
-        }
-
-        $accessToken = $tokenResp->json('access_token');
-        if (!$accessToken) {
-            Log::warning('Discord token response without access_token', ['body' => $tokenResp->json()]);
-            return redirect()->route('dashboard')->with('toast', 'Discord: не получили access_token.');
-        }
-
-        // 3) берём профиль
-        try {
-            $meResp = $this->httpClient()
-                ->withToken($accessToken)
-                ->get(config('services.discord.api_base') . '/users/@me');
-        } catch (ConnectionException $e) {
-            Log::error('Discord /users/@me HTTP failed', ['e' => $e->getMessage()]);
-            return redirect()->route('dashboard')
-                ->with('toast', 'Discord: нет соединения (profile). Попробуй ещё раз.');
-        }
-
-        if (!$meResp->ok()) {
-            Log::warning('Discord profile fetch failed', ['status' => $meResp->status(), 'body' => $meResp->json()]);
-            return redirect()->route('dashboard')->with('toast', 'Discord: не удалось получить профиль.');
-        }
-
-        $me = $meResp->json();
-
-        // 4) сохраняем данные в пользователе
-        $user = $r->user();
-        $user->discord_user_id = (string)($me['id'] ?? '');
-        $user->discord_username = $me['global_name'] ?? ($me['username'] ?? null);
-        $user->discord_avatar = $me['avatar'] ?? null;
+        $user->discord_user_id = null;
+        $user->discord_username = null;
+        $user->discord_avatar = null;
         $user->save();
 
-        return redirect()->route('dashboard')->with('toast', 'Discord connected!');
+        return back()->with('toast', 'Discord отвязан.');
     }
 
-    public function unlink(Request $r)
+    /**
+     * Подбирает уникальное поле name для пользователя.
+     */
+    private function uniqueName(string $base): string
     {
-        $u = $r->user();
-        $u->discord_user_id = null;
-        $u->discord_username = null;
-        $u->discord_avatar = null;
-        $u->save();
+        $name = Str::limit(trim($base) ?: 'user', 50, '');
+        $try = $name;
+        $i = 2;
 
-        return back()->with('toast', 'Discord unlinked');
+        while (User::where('name', $try)->exists()) {
+            $try = Str::limit($name, 40, '') . '_' . $i;
+            $i++;
+            if ($i > 9999) {
+                $try = 'user_' . Str::random(6);
+                break;
+            }
+        }
+        return $try;
     }
 }
