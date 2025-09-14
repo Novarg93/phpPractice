@@ -25,6 +25,10 @@ const submit = () => {
 const connectDiscord = () => {
   window.location.href = route('social.discord.redirect')
 }
+
+const connectGoogle = () => {
+  window.location.href = route('social.google.redirect')
+}
 </script>
 
 <template>
@@ -45,9 +49,19 @@ const connectDiscord = () => {
         Continue with Discord
       </button>
 
+      <button type="button" @click="connectGoogle"
+        class="w-full mt-2 inline-flex items-center justify-center gap-2 rounded-md border px-4 py-2 text-sm font-medium transition hover:bg-muted">
+        <!-- простая "G" иконка -->
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#EA4335"
+            d="M12 10.2v3.9h5.6c-.2 1.3-1.7 3.9-5.6 3.9-3.4 0-6.2-2.8-6.2-6.2S8.6 5.6 12 5.6c1.9 0 3.2.8 3.9 1.5l2.6-2.6C17.1 2.9 14.8 2 12 2 6.5 2 2 6.5 2 12s4.5 10 10 10c5.8 0 9.6-4.1 9.6-9.9 0-.7-.1-1.1-.2-1.9H12z" />
+        </svg>
+        Continue with Google
+      </button>
+
       <div class="my-4 flex items-center gap-3 text-xs text-muted-foreground">
         <div class="h-px w-full bg-border"></div>
-        <span>or sign up with email</span>
+        <span>or </span>
         <div class="h-px w-full bg-border"></div>
       </div>
     </div>

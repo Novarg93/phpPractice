@@ -46,6 +46,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'telegram_link_code_hash',
         'telegram_link_expires_at',
         'telegram_photo_url',
+
+        'google_user_id',
+        'google_email',
+        'google_avatar',
     ];
 
     public function orders(): HasMany
@@ -102,7 +106,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at'       => 'datetime',
             'password'                => 'hashed',
             // ↓ ДОБАВИЛИ: чтобы удобнее работать со сроком кода привязки
-            'telegram_link_expires_at'=> 'datetime',
+            'telegram_link_expires_at' => 'datetime',
         ];
     }
 }

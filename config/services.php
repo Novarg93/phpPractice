@@ -40,12 +40,17 @@ return [
         ],
     ],
     'discord' => [
-    'client_id'     => env('DISCORD_CLIENT_ID'),
-    'client_secret' => env('DISCORD_CLIENT_SECRET'),
-    'redirect'      => env('DISCORD_REDIRECT_URI'),
-    'authorize_url' => 'https://discord.com/api/oauth2/authorize',
-    'token_url'     => 'https://discord.com/api/oauth2/token',
-    'api_base'      => 'https://discord.com/api',
-],
+        'client_id'     => env('DISCORD_CLIENT_ID'),
+        'client_secret' => env('DISCORD_CLIENT_SECRET'),
+        'redirect'      => env('DISCORD_REDIRECT_URI'),
+        'authorize_url' => 'https://discord.com/api/oauth2/authorize',
+        'token_url'     => 'https://discord.com/api/oauth2/token',
+        'api_base'      => 'https://discord.com/api',
+    ],
+    'google' => [
+        'client_id'     => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect'      => env('GOOGLE_REDIRECT_URI'),
+    ],
 
 ];

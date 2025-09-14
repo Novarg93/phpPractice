@@ -15,7 +15,8 @@ use App\Http\Controllers\{
     WorkflowController,
     DiscordOAuthController,
     SearchController,
-    TelegramAuthController
+    TelegramAuthController,
+    GoogleOAuthController
 };
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Http;
@@ -54,6 +55,16 @@ Route::get('/auth/discord/callback', [DiscordOAuthController::class, 'callback']
     ->name('social.discord.callback');
 
 
+Route::get('/auth/google/redirect', [GoogleOAuthController::class, 'redirect'])
+    ->name('social.google.redirect');
+
+Route::get('/auth/google/callback', [GoogleOAuthController::class, 'callback'])
+    ->name('social.google.callback');
+
+Route::middleware('auth')->delete('/auth/google/unlink', [GoogleOAuthController::class, 'unlink'])
+    ->name('social.google.unlink');
+
+    
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard'))->name('dashboard');
 
