@@ -7,7 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Log;
 use App\Models\OrderItem;
-
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Support\Facades\Auth;
 
 class Order extends Model
 {
@@ -77,12 +78,16 @@ class Order extends Model
         $anyPaid       = in_array(OrderItem::STATUS_PAID,        $statuses, true);
         $hasRefund     = in_array(OrderItem::STATUS_REFUND,      $statuses, true);
 
+        // ➜ добавляем определение "все ли товары рефанднуты"
+        $allRefunded   = collect($statuses)->every(fn($s) => $s === OrderItem::STATUS_REFUND);
+
         $new = match (true) {
-            $hasRefund     => self::STATUS_REFUND,
-            $allCompleted  => self::STATUS_COMPLETED,
+            $allRefunded  => self::STATUS_REFUND,          // все строки REFUND → полный возврат
+            $hasRefund    => self::STATUS_PARTIAL_REFUND,  // есть хоть один REFUND → частичный возврат
+            $allCompleted => self::STATUS_COMPLETED,
             $anyInProgress => self::STATUS_IN_PROGRESS,
-            $anyPaid       => self::STATUS_PAID,
-            default        => self::STATUS_PENDING,
+            $anyPaid      => self::STATUS_PAID,
+            default       => self::STATUS_PENDING,
         };
 
         // если статус не меняется — но заказ уже completed и delivery_seconds ещё не посчитан/некорректен
@@ -164,7 +169,42 @@ class Order extends Model
                 ]);
                 event(new \App\Events\OrderWorkflowUpdated($order->id));
             }
+
+            // ✅ новое: логируем смену статуса заказа
+            if ($order->wasChanged('status')) {
+                app(\App\Services\OrderAuditLogger::class)
+                    ->statusChangedOnOrder(
+                        $order,
+                        $order->getOriginal('status'),  // старый
+                        $order->status,                 // новый
+                        Auth::user()                // кто поменял (может быть null)
+                    );
+            }
         });
+    }
+
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(\App\Models\Refund::class);
+    }
+
+    public function refundableAmountCents(): int
+    {
+        $paid = (int)($this->total_cents ?? 0);
+        $refunded = (int)($this->total_refunded_cents ?? 0);
+        return max(0, $paid - $refunded);
+    }
+
+    public function refundItems(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            \App\Models\RefundItem::class,
+            \App\Models\Refund::class,
+            'order_id',      // FK на refunds
+            'refund_id',     // FK на refund_items
+            'id',            // local key orders
+            'id'             // local key refunds
+        );
     }
 
 
@@ -176,6 +216,15 @@ class Order extends Model
     {
         return $this->hasMany(OrderItem::class);
     }
+
+    public function changeLogs()
+    {
+        return $this->hasMany(\App\Models\OrderChangeLog::class)->latest('id');
+    }
+
+
+
+
 
     public function promoCode(): BelongsTo
     {

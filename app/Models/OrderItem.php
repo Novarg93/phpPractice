@@ -28,7 +28,7 @@ class OrderItem extends Model
         'link_screen',
     ];
 
-     protected $attributes = [
+    protected $attributes = [
         'status' => self::STATUS_PENDING, // 👈 default
     ];
 
@@ -36,6 +36,8 @@ class OrderItem extends Model
         'cost_cents'   => 'integer',
         'profit_cents' => 'integer',
         'margin_bp'    => 'integer',
+        'refunded_qty' => 'decimal:2',
+        'refunded_amount_cents' => 'integer',
     ];
 
     public function recalcProfit(): void
@@ -50,10 +52,31 @@ class OrderItem extends Model
         }
     }
 
+    public function refundableQty(): float
+    {
+        $purchased = (float)($this->qty ?? 0);
+        $refunded  = (float)($this->refunded_qty ?? 0);
+        return max(0.0, $purchased - $refunded);
+    }
+
+    public function refundableAmountCents(): int
+    {
+        $line = (int)($this->line_total_cents ?? 0);
+        $refunded = (int)($this->refunded_amount_cents ?? 0);
+        return max(0, $line - $refunded);
+    }
+
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
     }
+
+    public function changeLogs()
+    {
+        return $this->hasMany(\App\Models\OrderChangeLog::class, 'order_item_id')->latest('id');
+    }
+
+
     public function options(): HasMany
     {
         return $this->hasMany(OrderItemOption::class);

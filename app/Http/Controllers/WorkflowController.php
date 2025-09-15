@@ -9,6 +9,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Auth;
+
+
 
 class WorkflowController extends Controller
 {
@@ -150,6 +153,10 @@ class WorkflowController extends Controller
             /** @var \App\Models\Order $order */
             $order = $item->order;
 
+            // 🟡 зафиксируем «до»
+            $oldCost    = $item->getOriginal('cost_cents');
+            $oldStatusI = $item->getOriginal('status');
+
             $clientStatus = $data['status'] ?? null;
             $forcedInProgress = false;
 
@@ -213,6 +220,17 @@ class WorkflowController extends Controller
 
             $item->save();
 
+            // 🟢 аудит изменений item
+            $logger = app(\App\Services\OrderAuditLogger::class);
+            $actor  = Auth::user();
+
+            if ($oldCost !== $item->cost_cents) {
+                $logger->costUpdated($item, $oldCost, $item->cost_cents, $actor, 'workflow inline edit');
+            }
+            if ($oldStatusI !== $item->status) {
+                $logger->statusChangedOnItem($item, $oldStatusI, $item->status, $actor);
+            }
+
             $order->recalcTotals();
             $order->syncStatusFromItems();
 
@@ -222,6 +240,7 @@ class WorkflowController extends Controller
             ) {
                 $order->status = \App\Models\Order::STATUS_IN_PROGRESS;
                 $order->save();
+                // (лог смены статуса заказа у тебя уже пишется в Order::booted())
             }
 
             event(new \App\Events\OrderWorkflowUpdated($order->id));
@@ -380,6 +399,10 @@ class WorkflowController extends Controller
                 /** @var OrderItem $item */
                 $item = OrderItem::with('order')->findOrFail($row['id']);
 
+                // 🟡 «до»
+                $oldCost    = $item->getOriginal('cost_cents');
+                $oldStatusI = $item->getOriginal('status');
+
                 $clientStatus = $row['status'] ?? null;
                 $forcedInProgress = false;
 
@@ -444,8 +467,19 @@ class WorkflowController extends Controller
 
                 $item->save();
 
+                // 🟢 аудит
+                $logger = app(\App\Services\OrderAuditLogger::class);
+                $actor  = Auth::user();
+
+                if ($oldCost !== $item->cost_cents) {
+                    $logger->costUpdated($item, $oldCost, $item->cost_cents, $actor, 'workflow bulk edit');
+                }
+                if ($oldStatusI !== $item->status) {
+                    $logger->statusChangedOnItem($item, $oldStatusI, $item->status, $actor);
+                }
+
                 $orderIds[$item->order_id] = true;
-                $result[] = $item->fresh(['order.user', 'product', 'options','product.optionGroups']);
+                $result[] = $item->fresh(['order.user', 'product', 'options', 'product.optionGroups']);
             }
 
             foreach (array_keys($orderIds) as $oid) {

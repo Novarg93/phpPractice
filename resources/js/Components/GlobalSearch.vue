@@ -22,12 +22,20 @@ type Product = {
   human_price: string
   stored_image: string
   url_code: string
+
+  // ← добавляем поля из SearchController
+  game_slug?: string | null
+  category_slug?: string | null
+  product_slug?: string | null
+
   game?: {
     title: string
     url_code: string
     stored_logo_image: string
   } | null
 }
+
+let cancel: AbortController | null = null
 
 const open = ref(false)
 const query = ref('')
@@ -40,8 +48,12 @@ let tId: number | null = null
 const hasQuery = computed(() => query.value.trim().length > 0)
 const hasResults = computed(() => results.value.length > 0)
 
+
 function focusInputSoon() {
-  nextTick(() => inputRef.value?.focus())
+  nextTick(() => {
+    const el = inputRef.value
+    if (el && typeof el.focus === 'function') el.focus()
+  })
 }
 
 function resetState() {
@@ -75,28 +87,42 @@ function debounceSearch() {
 
 async function runSearch() {
   loading.value = true
+  cancel?.abort()
+  cancel = new AbortController()
+
   try {
-    const { data } = await axios.post<{ products: Product[] }>(route('search'), {
-      query: query.value.trim(),
-    })
+    const { data } = await axios.post<{ products: Product[] }>(
+      route('search'),
+      { query: query.value.trim() },
+      { signal: cancel.signal as any }, 
+    )
     results.value = data?.products ?? []
     activeIndex.value = results.value.length ? 0 : -1
-  } catch {
-    results.value = []
-    activeIndex.value = -1
+  } catch (e: any) {
+    if (e.name !== 'CanceledError' && e.code !== 'ERR_CANCELED') {
+      results.value = []
+      activeIndex.value = -1
+    }
   } finally {
     loading.value = false
   }
 }
 
 function productUrl(p: Product): string {
-  // старый проект: route('product.view', url_code)
-  try {
-    return route('product.view', p.url_code)
-  } catch {
-    // запасной вариант, если Ziggy-роут не объявлен
-    return `/products/${encodeURIComponent(p.url_code)}`
+  const game = p.game_slug ?? p.game?.url_code
+  const category = p.category_slug
+  const product = p.product_slug ?? p.url_code
+
+  // Ziggy есть → используем именованный роут (routes/web.php: name('products.show'))
+  if (typeof route === 'function' && game && category && product) {
+    return route('products.show', { game, category, product })
   }
+
+  // Фолбэк
+  if (game && category && product) {
+    return `/games/${encodeURIComponent(game)}/${encodeURIComponent(category)}/${encodeURIComponent(product)}`
+  }
+  return `/products/${encodeURIComponent(product)}`
 }
 
 function selectActive() {
@@ -166,11 +192,8 @@ watch(query, debounceSearch)
 
 <template>
   <!-- Trigger button (встраивай куда угодно в хедер) -->
-  <Button
-    variant="ghost"
-    class="h-9 px-3 flex items-center gap-2 rounded-lg border border-border text-sm"
-    @click="openDialog"
-  >
+  <Button variant="ghost" class="h-9 px-3 flex items-center gap-2 rounded-lg border border-border text-sm"
+    @click="openDialog">
     <Search class="w-4 h-4 hidden md:block" />
     <span class="inline">Search</span>
     <span class="ml-2 sm:flex items-center gap-1 text-xs hidden text-muted-foreground">
@@ -191,16 +214,10 @@ watch(query, debounceSearch)
       <div class="px-4 pb-2">
         <div class="relative">
           <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            ref="inputRef"
-            v-model="query"
-            type="search"
-            placeholder="Search products…"
-            class="pl-9"
-            @keydown.down.prevent.stop="onArrowDown"
-            @keydown.up.prevent.stop="onArrowUp"
-            @keydown.enter.prevent.stop="selectActive"
-          />
+          <input ref="inputRef" v-model="query" type="search" placeholder="Search products…"
+            class="pl-9 w-full h-9 rounded-md border bg-background px-3 py-1 text-sm shadow-sm outline-none"
+            @keydown.down.prevent.stop="onArrowDown" @keydown.up.prevent.stop="onArrowUp"
+            @keydown.enter.prevent.stop="selectActive" />
           <div v-if="loading" class="absolute right-3 top-1/2 -translate-y-1/2">
             <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
           </div>
@@ -209,35 +226,17 @@ watch(query, debounceSearch)
 
       <!-- Results -->
       <div class="px-2 pb-2">
-        <div
-          v-if="hasResults"
-          class="max-h-96 overflow-auto rounded-md border border-border"
-          role="listbox"
-          :aria-activedescendant="activeIndex >= 0 ? `gs-item-${activeIndex}` : undefined"
-        >
-          <button
-            v-for="(p, i) in results"
-            :key="p.id"
-            :id="`gs-item-${i}`"
-            role="option"
+        <div v-if="hasResults" class="max-h-96 overflow-auto rounded-md border border-border" role="listbox"
+          :aria-activedescendant="activeIndex >= 0 ? `gs-item-${activeIndex}` : undefined">
+          <button v-for="(p, i) in results" :key="p.id" :id="`gs-item-${i}`" role="option"
             :aria-selected="i === activeIndex"
             class="w-full text-left px-3 py-2 flex items-center gap-3 hover:bg-muted focus:bg-muted focus:outline-none"
-            :class="i === activeIndex ? 'bg-muted' : ''"
-            @mouseenter="activeIndex = i"
-            @click="() => { closeDialog(); router.visit(productUrl(p)) }"
-          >
+            :class="i === activeIndex ? 'bg-muted' : ''" @mouseenter="activeIndex = i"
+            @click="() => { closeDialog(); router.visit(productUrl(p)) }">
             <div class="relative shrink-0">
-              <img
-                :src="p.stored_image"
-                :alt="p.title"
-                class="h-10 w-10 rounded object-cover border border-border"
-              />
-              <img
-                v-if="p.game?.stored_logo_image"
-                :src="p.game.stored_logo_image"
-                :alt="p.game.title"
-                class="absolute -right-1 -bottom-1 h-5 w-5 rounded bg-background p-0.5 object-contain border border-border"
-              />
+              <img :src="p.stored_image" :alt="p.title" class="h-10 w-10 rounded object-cover border border-border" />
+              <img v-if="p.game?.stored_logo_image" :src="p.game.stored_logo_image" :alt="p.game.title"
+                class="absolute -right-1 -bottom-1 h-5 w-5 rounded bg-background p-0.5 object-contain border border-border" />
             </div>
             <div class="min-w-0 flex-1">
               <div class="truncate text-sm font-medium">{{ p.title }}</div>
