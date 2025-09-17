@@ -39,12 +39,20 @@ class AppServiceProvider extends ServiceProvider
             'telegram_bot' => env('TELEGRAM_BOT_USERNAME'),
         ]);
 
-        Inertia::share(
-            'pages',
-            fn() =>
-            Schema::hasTable('pages')
-                ? \App\Models\Page::select('id', 'name', 'code')->orderBy('order')->get()
-                : collect()
-        );
+        Inertia::share('legalPages', function () {
+            if (! Schema::hasTable('pages')) return collect();
+
+            return Page::query()
+                ->select('id', 'name', 'code')
+                ->whereNotNull('code')
+                ->orderBy('order') // или на тот столбец, который у тебя реально есть
+                ->get()
+                ->map(fn(Page $p) => [
+                    'id'   => $p->id,
+                    'name' => $p->name,
+                    'code' => $p->code,
+                    'url'  => route('legal.show', $p->code),
+                ]);
+        });
     }
 }
