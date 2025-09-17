@@ -59,9 +59,9 @@ async function saveNick() {
   nickError.value = null
   try {
     const { data } = await axios.post(route('orders.nickname', props.order.id), { nickname: v })
-    // локально обновим отображение
-    ;(props.order as any).nickname = data.nickname
-    ;(props.order as any).needs_nickname = false
+      // локально обновим отображение
+      ; (props.order as any).nickname = data.nickname
+      ; (props.order as any).needs_nickname = false
     isEditingNick.value = false
     justSavedNick.value = true
     setTimeout(() => (justSavedNick.value = false), 2000)
@@ -87,21 +87,25 @@ async function saveNick() {
         <!-- items -->
         <div class="lg:col-span-2 space-y-3">
           <div v-for="it in order.items" :key="it.product_name"
-               class="border border-border rounded-lg p-4 flex justify-between">
+            class="border border-border rounded-lg p-4 flex justify-between">
             <div class="flex items-center gap-4">
-              <img v-if="it.image_url" class="w-16 h-16 object-cover rounded" :src="it.image_url" :alt="it.product_name">
+              <img v-if="it.image_url" class="w-16 h-16 object-cover rounded" :src="it.image_url"
+                :alt="it.product_name">
               <div>
                 <div class="font-medium">{{ it.product_name }}</div>
 
                 <div v-if="it.options?.length" class="text-sm text-muted-foreground">
                   <ul class="list-disc pl-5 space-y-0.5">
                     <li v-for="opt in it.options" :key="opt.id">
-                      <span v-if="opt.is_ga" class="text-[10px] mr-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">GA</span>
+                      <span v-if="opt.is_ga"
+                        class="text-[10px] mr-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">GA</span>
                       <span class="font-medium">{{ opt.title }}</span>
                       <span v-if="showOptPrice(opt)" class="ml-1">
                         (
-                        <template v-if="opt.calc_mode === 'percent'">+{{ opt.value_percent ?? 0 }}% {{ opt.scope }}</template>
-                        <template v-else>{{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(opt.value_cents ?? 0) }} {{ opt.scope }}</template>
+                        <template v-if="opt.calc_mode === 'percent'">+{{ opt.value_percent ?? 0 }}% {{ opt.scope
+                          }}</template>
+                        <template v-else>{{ (opt.value_cents ?? 0) >= 0 ? '+' : '' }}{{ formatPrice(opt.value_cents ??
+                          0) }} {{ opt.scope }}</template>
                         )
                       </span>
                     </li>
@@ -129,22 +133,35 @@ async function saveNick() {
               <OrderStatusBadge :status="order.status" />
             </div>
             <div class="mt-2 text-lg font-semibold">Total: {{ formatPrice(order.total_cents) }}</div>
+
+            <!-- Кнопка повторной оплаты -->
+            <div v-if="order.status === 'pending'" class="mt-4 space-y-2">
+              <Button class="w-full" @click="retryPay(order.id)">Retry Payment</Button>
+
+              <!-- Подсказка, если e-mail не верифицирован, этот пост всё равно стопнётся на бекенде -->
+              <p v-if="$page.props.auth?.user && !$page.props.auth.user.email_verified_at"
+                class="text-xs text-amber-600">
+                Please verify your email to complete the payment.
+              </p>
+            </div>
           </div>
 
+
           <!-- Nickname card -->
-          <div class="border border-border rounded-lg p-4" :class="justSavedNick ? 'bg-green-700/10 border-green-700' : ''">
+          <div class="border border-border rounded-lg p-4"
+            :class="justSavedNick ? 'bg-green-700/10 border-green-700' : ''">
             <div class="flex items-center justify-between mb-2">
               <div class="font-semibold">Character nickname</div>
-              <button v-if="!isEditingNick"
-                      class="text-xs px-2 py-1 rounded border hover:bg-muted"
-                      @click="startEditNick">
+              <button v-if="!isEditingNick" class="text-xs px-2 py-1 rounded border hover:bg-muted"
+                @click="startEditNick">
                 {{ order.nickname ? 'Edit' : 'Add' }}
               </button>
             </div>
 
             <template v-if="!isEditingNick">
               <div class="text-sm">
-                <span v-if="order.nickname"><span class="text-muted-foreground">Current:</span> <span class="font-medium">{{ order.nickname }}</span></span>
+                <span v-if="order.nickname"><span class="text-muted-foreground">Current:</span> <span
+                    class="font-medium">{{ order.nickname }}</span></span>
                 <span v-else class="text-amber-700">Not set</span>
               </div>
               <p class="text-xs text-muted-foreground mt-1">Used for in-game delivery.</p>
@@ -152,17 +169,9 @@ async function saveNick() {
 
             <template v-else>
               <div class="flex items-center gap-2">
-                <Input
-                  v-model="nickVal"
-                  class="h-9 px-2 rounded  border w-56"
-                  placeholder="Nickname (A–Z, 0–9, _)"
-                  @keydown.enter.prevent="saveNick"
-                  @keydown.esc.prevent="cancelEditNick"
-                  autocomplete="off"
-                />
-                <Button variant="default"
-                        :disabled="isSavingNick"
-                        @click="saveNick">
+                <Input v-model="nickVal" class="h-9 px-2 rounded  border w-56" placeholder="Nickname (A–Z, 0–9, _)"
+                  @keydown.enter.prevent="saveNick" @keydown.esc.prevent="cancelEditNick" autocomplete="off" />
+                <Button variant="default" :disabled="isSavingNick" @click="saveNick">
                   {{ isSavingNick ? 'Saving…' : 'Save' }}
                 </Button>
                 <Button variant="secondary" @click="cancelEditNick">Cancel</Button>
