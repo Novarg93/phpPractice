@@ -346,38 +346,134 @@ class WorkflowController extends Controller
     }
 
 
-    private function buildItemText(OrderItem $i): string
+    private function buildItemText(\App\Models\OrderItem $i): string
     {
-        $name = $i->product_name ?: ($i->product?->name ?? 'Item');
+        $product = $i->product;
+        $name = $i->product_name ?: ($product?->name ?? 'Item');
 
-        $lines = [];
-        foreach ($i->options as $o) {
-            $title = $o->title;
-            $range = null;
+        // Собираем карту value_id -> метаданные группы
+        $valueToGroup = [];
+        $statsGroupCodes = ['affix', 'unique_d4_stats']; // характеристики (3 шт. для legendary / до 4 для unique d4)
+        $classCode = 'class';
+        $slotCode  = 'slot';
+        $gaCode    = 'ga';
 
-            if (!empty($o->selected_min) || !empty($o->selected_max)) {
-                $rangeMin = $o->selected_min ?? '';
-                $rangeMax = $o->selected_max ?? '';
-                $range = " [{$rangeMin} - {$rangeMax}]";
-            } else {
-                $p = $o->payload_json ?? [];
-                if (isset($p['min']) || isset($p['max'])) {
-                    $rangeMin = $p['min'] ?? '';
-                    $rangeMax = $p['max'] ?? '';
-                    $range = " [{$rangeMin} - {$rangeMax}]";
+        if ($product && $product->optionGroups) {
+            foreach ($product->optionGroups as $g) {
+                foreach (($g->values ?? []) as $v) {
+                    $valueToGroup[(int)$v->id] = [
+                        'code'  => (string)($g->code ?? ''),
+                        'title' => (string)($g->title ?? ''),
+                    ];
                 }
             }
-
-            $lines[] = e($title . ($range ?? ''));
         }
 
-        // формируем HTML: название + перенос + опции по строкам
-        $html = e($name);
-        if ($lines) {
-            $html .= '<br>' . implode('<br>· ', $lines);
+        // Разносим опции по "корзинам"
+        $classLine = null;
+        $slotLine  = null;
+        $statLines = [];     // характеристики (affix / unique_d4_stats)
+        $otherLines = [];    // на всякий случай (range и прочее)
+        $gaCount = 0;
+
+        foreach ($i->options as $o) {
+            // range (double range / qty etc.)
+            if (!is_null($o->option_group_id) && is_null($o->option_value_id)) {
+                // подпишем диапазон, если есть
+                $range = null;
+                if (!empty($o->selected_min) || !empty($o->selected_max)) {
+                    $range = ' [' . (int)$o->selected_min . ' - ' . (int)$o->selected_max . ']';
+                } elseif (is_array($o->payload_json ?? null)) {
+                    $p = $o->payload_json;
+                    if (isset($p['min']) || isset($p['max'])) {
+                        $range = ' [' . ($p['min'] ?? '') . ' - ' . ($p['max'] ?? '') . ']';
+                    }
+                }
+                $otherLines[] = e($o->title . ($range ?? ''));
+                continue;
+            }
+
+            // value-опции
+            if (!is_null($o->option_value_id)) {
+                $vid = (int)$o->option_value_id;
+                $gMeta = $valueToGroup[$vid] ?? ['code' => '', 'title' => ''];
+                $gCode = $gMeta['code'];
+
+                // пропускаем саму GA-группу (dropdown уровня GA)
+                if ($gCode === $gaCode) {
+                    continue;
+                }
+
+                // Class
+                if ($gCode === $classCode) {
+                    $classLine = e($o->title);
+                    continue;
+                }
+
+                // Slot
+                if ($gCode === $slotCode) {
+                    $slotLine = e($o->title);
+                    continue;
+                }
+
+                // Характеристики (affix / unique_d4_stats)
+                if (in_array($gCode, $statsGroupCodes, true)) {
+                    $isGa = (bool)($o->is_ga ?? false);
+                    if ($isGa) $gaCount++;
+
+                    // Мягкий бейдж GA перед названием
+                    $gaBadge = $isGa
+                        ? '<span style="display:inline-block;font-size:10px;line-height:1;margin-right:4px;padding:2px 4px;border-radius:3px;background:#fef3c7;color:#92400e;font-weight:600;">GA</span>'
+                        : '';
+
+                    $statLines[] = $gaBadge . e($o->title);
+                    continue;
+                }
+
+                // Остальное — в "прочее"
+                $otherLines[] = e($o->title);
+            }
         }
 
-        return $html;
+        // Заголовок с "(N GA)" если нужно
+        $titleHtml = e($name) . ($gaCount > 0 ? ' (' . $gaCount . ' GA)' : '');
+
+        // Сборка линий в нужном порядке: Class, Slot, затем пустая строка, затем характеристики
+        $lines = [];
+        if ($classLine) $lines[] = $classLine;
+        if ($slotLine)  $lines[] = $slotLine;
+
+        if (!empty($statLines)) {
+            // 🔽 вместо пустой строки — разделитель
+            $lines[] = '<span style="display:inline-block;color:#9ca3af;font-size:11px;">────────────</span>';
+            foreach ($statLines as $ln) $lines[] = $ln;
+        }
+
+        // (Опционально) добавить 'прочее' ниже характеристик
+        if (!empty($otherLines)) {
+            $lines[] = '';
+            foreach ($otherLines as $ln) $lines[] = $ln;
+        }
+
+        // Рендер: первая строка — заголовок, дальше — маркированные пункты (· ...)
+        $body = '';
+        foreach ($lines as $ln) {
+            if ($ln === '') {
+                $body .= '<br>';
+                continue;
+            }
+
+            // Разделитель — СВОЯ строка без завершающего <br>
+            if (str_starts_with($ln, '<span')) {
+                $body .= '<br>' . $ln;
+                continue;
+            }
+
+            // Обычная строка (и GA, и не-GA) — всегда с маркером и переносом
+            $body .= '<br>· ' . $ln;
+        }
+
+        return $titleHtml . $body;
     }
 
     public function bulkUpdate(Request $r)

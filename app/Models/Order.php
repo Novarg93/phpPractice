@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Log;
 use App\Models\OrderItem;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
+
 
 class Order extends Model
 {
@@ -222,7 +224,30 @@ class Order extends Model
         return $this->hasMany(\App\Models\OrderChangeLog::class)->latest('id');
     }
 
+    public function getPaymentProviderLabelAttribute(): ?string
+    {
+        return match ($this->payment_method) {
+            'stripe', 'stripe_test' => app()->isProduction() ? 'Stripe' : 'Stripe (test)',
+            default => $this->payment_method ?: null,
+        };
+    }
 
+    public function getProviderDashboardUrlAttribute(): ?string
+    {
+        if (!$this->payment_id) return null;
+
+        // Для Stripe ссылка вида:
+        // prod: https://dashboard.stripe.com/payments/pi_xxx
+        // test: https://dashboard.stripe.com/test/payments/pi_xxx
+        if (Str::startsWith($this->payment_method, 'stripe')) {
+            $base = app()->isProduction()
+                ? 'https://dashboard.stripe.com/payments/'
+                : 'https://dashboard.stripe.com/test/payments/';
+            return $base . $this->payment_id;
+        }
+
+        return null;
+    }
 
 
 

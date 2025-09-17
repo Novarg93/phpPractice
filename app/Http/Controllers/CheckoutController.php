@@ -451,24 +451,21 @@ class CheckoutController extends Controller
 
         // Создание Checkout Session
         $session = $stripe->checkout->sessions->create([
-            'mode'                   => 'payment',
-            'payment_method_types'   => ['card'],
-            'line_items'             => $lineItems, // как у тебя
-            'discounts'              => $discounts, // ← Stripe сам применит скидку
-            'success_url'            => route('checkout.success') . '?session_id={CHECKOUT_SESSION_ID}',
-            'cancel_url'             => route('checkout.cancel'),
-            'metadata'               => [
-                'user_id'  => (string) $user->id,
-                'order_id' => (string) $order->id,
-            ],
-        ]);
+             'mode'                   => 'payment',
+             'payment_method_types'   => ['card'],
+             'line_items'             => $lineItems, // как у тебя
+             'discounts'              => $discounts, // ← Stripe сам применит скидку
+             'success_url'            => route('checkout.success') . '?session_id={CHECKOUT_SESSION_ID}',
+             'cancel_url'             => route('checkout.cancel'),
+             'metadata'               => [
+                 'user_id'  => (string) $user->id,
+                 'order_id' => (string) $order->id,
+             ],
+         ]);
 
 
         // 4) Сохраняем связь заказа с сессией Stripe
-        $order->update([
-            'checkout_session_id' => $session->id,
-            'payment_id'          => $session->id, // можно одинаково хранить
-        ]);
+        $order->update(['checkout_session_id' => $session->id]);
 
         return response()->json([
             'id'  => $session->id,

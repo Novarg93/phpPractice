@@ -1,59 +1,50 @@
 <?php
 
-use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 
-Artisan::command('user:discord {--id=} {--email=}', function () {
-    $id    = $this->option('id');
-    $email = $this->option('email');
+Artisan::command('orders:check-refund-columns', function () {
+    $this->info('Checking orders table for refund columns...');
 
-    $user = null;
-    if ($id)    $user = User::find($id);
-    if (!$user && $email) $user = User::where('email', $email)->first();
+    $added = [];
 
-    if (!$user) {
-        $this->error('User not found. Use --id= or --email=');
-        return 1;
+    // total_refunded_cents
+    if (!Schema::hasColumn('orders', 'total_refunded_cents')) {
+        Schema::table('orders', function (Blueprint $table) {
+            $table->integer('total_refunded_cents')->default(0)->after('total_cents');
+        });
+        $added[] = 'total_refunded_cents';
+        $this->warn('Added column: total_refunded_cents (INT, default 0)');
+    } else {
+        $this->line('✓ Column exists: total_refunded_cents');
     }
 
-    $avatarUrl = ($user->discord_user_id && $user->discord_avatar)
-        ? "https://cdn.discordapp.com/avatars/{$user->discord_user_id}/{$user->discord_avatar}.png?size=128"
-        : null;
-
-    $this->table(
-        ['id','email','discord_user_id','discord_username','discord_avatar','discord_avatar_url'],
-        [[
-            $user->id,
-            $user->email,
-            $user->discord_user_id ?? '—',
-            $user->discord_username ?? '—',
-            $user->discord_avatar ?? '—',
-            $avatarUrl ?? '—',
-        ]]
-    );
-
-    return 0;
-})->describe('Show Discord fields for a user by --id or --email');
-
-Artisan::command('user:discord:unlink {--id=} {--email=}', function () {
-    $id    = $this->option('id');
-    $email = $this->option('email');
-
-    $user = null;
-    if ($id)    $user = User::find($id);
-    if (!$user && $email) $user = User::where('email', $email)->first();
-
-    if (!$user) {
-        $this->error('User not found. Use --id= or --email=');
-        return 1;
+    // refunded_at
+    if (!Schema::hasColumn('orders', 'refunded_at')) {
+        Schema::table('orders', function (Blueprint $table) {
+            $table->timestamp('refunded_at')->nullable()->after('paid_at');
+        });
+        $added[] = 'refunded_at';
+        $this->warn('Added column: refunded_at (TIMESTAMP NULL)');
+    } else {
+        $this->line('✓ Column exists: refunded_at');
     }
 
-    $user->forceFill([
-        'discord_user_id' => null,
-        'discord_username' => null,
-        'discord_avatar' => null,
-    ])->save();
+    // Показать небольшую сводку
+    try {
+        $cnt = DB::table('orders')->count();
+        $sumRefunded = DB::table('orders')->sum('total_refunded_cents');
+        $this->line("Orders count: {$cnt}");
+        $this->line("Sum(total_refunded_cents): " . number_format((int) $sumRefunded));
+    } catch (\Throwable $e) {
+        $this->warn('Could not read orders summary: ' . $e->getMessage());
+    }
 
-    $this->info("Discord unlinked for user #{$user->id} ({$user->email}).");
-    return 0;
-})->describe('Unlink Discord for a user by --id or --email');
+    if (empty($added)) {
+        $this->info('No changes needed. All columns already exist.');
+    } else {
+        $this->info('Done. Columns added: ' . implode(', ', $added));
+    }
+})->describe('Check and add orders.total_refunded_cents and orders.refunded_at if missing.');

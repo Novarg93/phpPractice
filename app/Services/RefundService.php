@@ -2,11 +2,16 @@
 
 namespace App\Services;
 
-use App\Models\{Order, OrderItem, Refund, RefundItem, User};
+use App\Models\Order;
+use App\Models\OrderItem;
+use App\Models\Refund;
+use App\Models\RefundItem;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use App\Services\OrderAuditLogger;
 use Illuminate\Support\Facades\App;
+use App\Contracts\Payments\RefundProvider;
 
 
 
@@ -16,6 +21,13 @@ class RefundService
      * Рефанд одной строки по qty (или по сумме).
      * Если $qty > 0 — считаем сумму пропорционально line_total; если $amountCents > 0 — берём её.
      */
+
+    public function __construct(
+        private RefundProvider $provider, // <-- внедрим провайдер
+        private OrderAuditLogger $audit
+    ) {}
+
+
     public function refundItem(OrderItem $item, ?float $qty, ?int $amountCents, ?string $reason, ?User $actor = null): Refund
     {
         $item->load('order');
@@ -32,22 +44,27 @@ class RefundService
                 throw ValidationException::withMessages(['amount' => 'Invalid amount for refund.']);
             }
         }
-
         if ($amountCents > $order->refundableAmountCents()) {
             throw ValidationException::withMessages(['amount' => 'Exceeds order refundable amount.']);
         }
 
-        return DB::transaction(function () use ($order, $item, $qty, $amountCents, $reason, $actor) {
+        // провайдерский результат
+        $result = $this->provider->refundOrderAmount($order, $amountCents, $reason);
+
+        return DB::transaction(function () use ($order, $item, $qty, $amountCents, $reason, $actor, $result) {
             /** @var Refund $refund */
             $refund = Refund::create([
-                'order_id'     => $order->id,
-                'amount_cents' => $amountCents,
-                'status'       => 'succeeded', // без провайдера считаем успешным сразу
-                'reason'       => $reason,
-                'created_by'   => $actor?->id,
+                'order_id'         => $order->id,
+                'amount_cents'     => $amountCents,
+                'status'           => $result->status ?: 'succeeded',
+                'reason'           => $reason,
+                'created_by'       => $actor?->id,
+                'provider'         => $result->provider,
+                'provider_id'      => $result->providerId,
+                'provider_payload' => $result->payload,
             ]);
 
-            App::make(OrderAuditLogger::class)->refundCreated(
+            app(OrderAuditLogger::class)->refundCreated(
                 $order,
                 $amountCents,
                 $actor,
@@ -66,7 +83,7 @@ class RefundService
                 'amount_cents'   => $amountCents,
             ]);
 
-            // обновляем агрегаты на item / order
+            // агрегаты item / order
             $item->refunded_qty          = (float)$item->refunded_qty + (float)($qty ?? 0);
             $item->refunded_amount_cents = (int)$item->refunded_amount_cents + $amountCents;
             $item->status                = \App\Models\OrderItem::STATUS_REFUND;
@@ -74,12 +91,11 @@ class RefundService
 
             $order->total_refunded_cents = (int)$order->total_refunded_cents + $amountCents;
             $order->refunded_at = $order->refundableAmountCents() === 0 ? now() : $order->refunded_at;
-            // если все строки ушли в REFUND → статус заказа REFUND, иначе PARTIAL_REFUND
+
             $allRefunded = $order->items()->where('status', '!=', \App\Models\OrderItem::STATUS_REFUND)->count() === 0;
             $order->status = $allRefunded ? \App\Models\Order::STATUS_REFUND : \App\Models\Order::STATUS_PARTIAL_REFUND;
             $order->save();
 
-            // можно дернуть твой event/broadcast, если нужно
             event(new \App\Events\OrderWorkflowUpdated($order->id));
 
             return $refund->load(['items.orderItem', 'order']);
@@ -95,16 +111,24 @@ class RefundService
             throw ValidationException::withMessages(['amount' => 'Invalid amount for refund.']);
         }
 
-        return DB::transaction(function () use ($order, $amountCents, $reason, $actor) {
+        // 1) «Платёжный мир»: получаем результат (в тесте — фейк, в проде — Stripe)
+        $result = $this->provider->refundOrderAmount($order, $amountCents, $reason);
+
+        return DB::transaction(function () use ($order, $amountCents, $reason, $actor, $result) {
+            // 2) Доменный рефанд
             $refund = Refund::create([
-                'order_id'     => $order->id,
-                'amount_cents' => $amountCents,
-                'status'       => 'succeeded',
-                'reason'       => $reason,
-                'created_by'   => $actor?->id,
+                'order_id'         => $order->id,
+                'amount_cents'     => $amountCents,
+                'status'           => $result->status ?: 'succeeded',
+                'reason'           => $reason,
+                'created_by'       => $actor?->id,
+                'provider'         => $result->provider,
+                'provider_id'      => $result->providerId,
+                'provider_payload' => $result->payload,
             ]);
 
-            App::make(OrderAuditLogger::class)->refundCreated(
+            // аудит
+            $this->audit->refundCreated(
                 $order,
                 $amountCents,
                 $actor,
@@ -112,17 +136,26 @@ class RefundService
                 ['mode' => 'order_amount']
             );
 
-            $order->total_refunded_cents = (int)$order->total_refunded_cents + $amountCents;
+            // агрегаты заказа
+            $order->total_refunded_cents = (int) $order->total_refunded_cents + $amountCents;
             $order->status = \App\Models\Order::STATUS_PARTIAL_REFUND;
+
             if ($order->refundableAmountCents() === 0) {
                 $order->status = \App\Models\Order::STATUS_REFUND;
                 $order->refunded_at = now();
             }
             $order->save();
+            if ($order->status === \App\Models\Order::STATUS_REFUND) {
+    $order->items()
+        ->where('status', '!=', \App\Models\OrderItem::STATUS_REFUND)
+        ->update(['status' => \App\Models\OrderItem::STATUS_REFUND]);
+}
 
             event(new \App\Events\OrderWorkflowUpdated($order->id));
 
             return $refund;
         });
     }
+
+    
 }

@@ -21,6 +21,7 @@ return [
         'key'    => env('STRIPE_KEY'),
         'secret' => env('STRIPE_SECRET'),
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        'use_live_refunds' => (bool) env('STRIPE_USE_LIVE_REFUNDS', false),
     ],
 
     'resend' => [

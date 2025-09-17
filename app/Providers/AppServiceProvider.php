@@ -19,7 +19,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(\App\Contracts\Payments\RefundProvider::class, function ($app) {
+            if (app()->environment('production') && config('services.stripe.use_live_refunds')) {
+                return new \App\Services\Payments\StripeRefundProvider(
+                    new \Stripe\StripeClient(config('services.stripe.secret'))
+                );
+            }
+            return new \App\Services\Payments\FakeRefundProvider();
+        });
     }
 
     /**
@@ -28,14 +35,16 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
-    Inertia::share('social', fn () => [
-    'telegram_bot' => env('TELEGRAM_BOT_USERNAME'),
-]);
-        
-    Inertia::share('pages', fn () =>
-        Schema::hasTable('pages')
-            ? \App\Models\Page::select('id', 'name', 'code')->orderBy('order')->get()
-            : collect()
-    );
+        Inertia::share('social', fn() => [
+            'telegram_bot' => env('TELEGRAM_BOT_USERNAME'),
+        ]);
+
+        Inertia::share(
+            'pages',
+            fn() =>
+            Schema::hasTable('pages')
+                ? \App\Models\Page::select('id', 'name', 'code')->orderBy('order')->get()
+                : collect()
+        );
     }
 }

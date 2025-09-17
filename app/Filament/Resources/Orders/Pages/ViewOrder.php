@@ -19,7 +19,7 @@ class ViewOrder extends ViewRecord
 
     use HasRelationManagers;
 
-    
+
 
     protected static string $resource = OrdersResource::class;
 
@@ -49,6 +49,20 @@ class ViewOrder extends ViewRecord
                         ->dateTime(),
                 ]),
 
+            IC\Section::make('Payment')
+                ->columns(3)
+                ->schema([
+                    IC\TextEntry::make('payment_method')
+                        ->label('Paid via')
+                        ->placeholder('—'),
+                    IC\TextEntry::make('payment_id')
+                        ->label('Payment ID')
+                        ->placeholder('—'),
+                    IC\TextEntry::make('currency')
+                        ->label('Currency')
+                        ->placeholder('USD'),
+                ]),
+
             IC\Section::make('Refunds')
                 ->collapsible()
                 ->schema([
@@ -61,6 +75,11 @@ class ViewOrder extends ViewRecord
                             IC\TextEntry::make('reason')->label('Reason')->placeholder('—'),
                             IC\TextEntry::make('creator.email')->label('By')->placeholder('system'),
                             IC\TextEntry::make('created_at')->label('Created')->dateTime(),
+                            IC\TextEntry::make('event_type')
+                                ->label('Event')
+                                ->badge()
+                                ->placeholder('—')
+                                ->visible(fn($record) => filled($record->event_type)),
 
                             // вложенные позиции рефанда
                             IC\RepeatableEntry::make('items') // связь $refund->items()
@@ -79,7 +98,7 @@ class ViewOrder extends ViewRecord
                         ),
                 ]),
 
-            
+
 
             IC\Section::make('Refund Summary')
                 ->columns(2)
@@ -97,12 +116,12 @@ class ViewOrder extends ViewRecord
     }
 
     protected function mutateRecord($record)
-{
-    // Filament v4: этот хук уже имеет модель, просто догружаем недостающее
-    return $record->loadMissing([
-        'user',
-        'refunds.items.orderItem',
-        'changeLogs.actor',
-    ]);
-}
+    {
+        // Filament v4: этот хук уже имеет модель, просто догружаем недостающее
+        return $record->loadMissing([
+            'user',
+            'refunds.items.orderItem',
+            'changeLogs.actor',
+        ]);
+    }
 }

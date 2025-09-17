@@ -30,6 +30,18 @@ class OrdersTable
                 TextColumn::make('user.email')->label('User')->searchable(),
                 TextColumn::make('total_cents')->label('Total')->money('USD', divideBy: 100)->alignCenter(),
                 TextColumn::make('total_refunded_cents')->label('Refunded')->money('USD', divideBy: 100)->alignCenter(),
+                TextColumn::make('payment_method')
+                    ->label('Paid via')
+                    ->badge()
+                    ->sortable()
+                    ->formatStateUsing(fn($state) => $state ?: '—'),
+
+                TextColumn::make('payment_id')
+                    ->label('Payment ID')
+                    ->limit(10)
+                    ->tooltip(fn($record) => $record?->payment_id) // null-safe на всякий
+                    ->copyable()
+                    ->formatStateUsing(fn($state) => $state ?: '—'),
                 TextColumn::make('status')->badge()->label('Status')->sortable(),
                 TextColumn::make('created_at')->since()->sortable(),
             ])
@@ -52,7 +64,7 @@ class OrdersTable
                         Textarea::make('reason')->label('Reason')->rows(2),
                     ])
                     ->requiresConfirmation()
-                    ->visible(fn (Order $record): bool => $record->refundableAmountCents() > 0)
+                    ->visible(fn(Order $record): bool => $record->refundableAmountCents() > 0)
                     ->action(function (Order $record, array $data): void {
                         $amountCents = (int) round(((float) $data['amount']) * 100);
                         app(RefundService::class)->refundOrderAmount(
@@ -69,10 +81,11 @@ class OrdersTable
                     ->schema([
                         Select::make('order_item_id')
                             ->label('Item')
-                            ->options(fn (Order $record) => $record->items()->get()
-                                ->mapWithKeys(fn ($i) => [
-                                    $i->id => "{$i->product_name} · Qty:{$i->qty} · Paid: " . number_format($i->line_total_cents / 100, 2),
-                                ])
+                            ->options(
+                                fn(Order $record) => $record->items()->get()
+                                    ->mapWithKeys(fn($i) => [
+                                        $i->id => "{$i->product_name} · Qty:{$i->qty} · Paid: " . number_format($i->line_total_cents / 100, 2),
+                                    ])
                             )
                             ->searchable()
                             ->required(),
@@ -88,18 +101,18 @@ class OrdersTable
                             ->label('Qty to refund')
                             ->numeric()
                             ->minValue(0.01)
-                            ->visible(fn ($get): bool => $get('mode') === 'qty'),
+                            ->visible(fn($get): bool => $get('mode') === 'qty'),
 
                         TextInput::make('amount')
                             ->label('Amount (USD)')
                             ->numeric()
                             ->minValue(0.01)
-                            ->visible(fn ($get): bool => $get('mode') === 'amount'),
+                            ->visible(fn($get): bool => $get('mode') === 'amount'),
 
                         Textarea::make('reason')->label('Reason')->rows(2),
                     ])
                     ->requiresConfirmation()
-                    ->visible(fn (Order $record): bool => $record->refundableAmountCents() > 0)
+                    ->visible(fn(Order $record): bool => $record->refundableAmountCents() > 0)
                     ->action(function (Order $record, array $data): void {
                         $item = $record->items()->findOrFail($data['order_item_id']);
                         $qty = ($data['mode'] ?? null) === 'qty' ? (float) $data['qty'] : null;
