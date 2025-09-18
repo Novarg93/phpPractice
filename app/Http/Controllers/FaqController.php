@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\Faq;
@@ -14,10 +15,12 @@ class FaqController extends Controller
             ->get(['id', 'question', 'answer'])
             ->map(fn ($f) => [
                 'question' => $f->question,
-                'answer'   => $f->answer,           // v-html в AccordionContent
+                'answer'   => $f->answer, // HTML из RichEditor
                 'value'    => "item-{$f->id}",
             ]);
 
-        return Inertia::render('Your/FaqPage', ['faqs' => $faqs]);
+        return Inertia::render('Welcome', [
+            'faqs' => $faqs,
+        ]);
     }
 }

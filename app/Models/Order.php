@@ -148,7 +148,9 @@ class Order extends Model
         $this->total_cost_cents   = $costSum ?: null;
         $this->total_profit_cents = $profitSum ?: null;
         $this->margin_bp          = $saleSum > 0 ? intdiv($profitSum * 10000, $saleSum) : null;
-        $this->save();
+         if ($this->isDirty(['total_cost_cents', 'total_profit_cents', 'margin_bp'])) {
+            $this->save();
+        }
     }
 
 

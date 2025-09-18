@@ -17,7 +17,7 @@ use App\Http\Controllers\{
     SearchController,
     TelegramAuthController,
     GoogleOAuthController,
-    HomeController
+    FaqController
 };
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Http;
@@ -66,7 +66,7 @@ Route::get('/auth/google/callback', [GoogleOAuthController::class, 'callback'])
 Route::middleware('auth')->delete('/auth/google/unlink', [GoogleOAuthController::class, 'unlink'])
     ->name('social.google.unlink');
 
-Route::get('/', HomeController::class)->name('home');
+Route::get('/', FaqController::class)->name('home');
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard'))->name('dashboard');

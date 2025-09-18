@@ -98,7 +98,7 @@ class StripeWebhookController extends Controller
 
         DB::afterCommit(function () use ($order) {
             Log::info('Broadcast OrderWorkflowUpdated (after stripe paid)', ['order_id' => $order->id]);
-            event(new OrderWorkflowUpdated($order->id));
+            
         });
 
         Log::info('Stripe checkout.session.completed processed', [
@@ -183,7 +183,7 @@ class StripeWebhookController extends Controller
             'order_status' => $order->status,
         ]);
 
-        DB::afterCommit(fn() => event(new OrderWorkflowUpdated($order->id)));
+        
         return response('ok', 200);
     }
 
@@ -259,7 +259,7 @@ class StripeWebhookController extends Controller
             'order_status' => $order->status,
         ]);
 
-        DB::afterCommit(fn() => event(new OrderWorkflowUpdated($order->id)));
+        
         return response('ok', 200);
     }
 }

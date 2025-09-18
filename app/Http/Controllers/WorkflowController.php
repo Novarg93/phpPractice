@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 
 
@@ -92,8 +93,8 @@ class WorkflowController extends Controller
 
                                 if ($driver === 'mysql') {
                                     // регистр обычно игнорируется из-за collation, LIKE работает по JSON path
-                                    $ord->where('game_payload->nickname', 'like', $like)
-                                        ->orWhere('game_payload->character', 'like', $like);
+                                    $ord->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(game_payload, '$.nickname')) LIKE ?", [$like])
+                                        ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(game_payload, '$.character')) LIKE ?", [$like]);
                                 } elseif ($driver === 'pgsql') {
                                     // регистронезависимый поиск
                                     $ord->whereRaw("(game_payload->>'nickname') ILIKE ?", [$like])
@@ -234,16 +235,7 @@ class WorkflowController extends Controller
             $order->recalcTotals();
             $order->syncStatusFromItems();
 
-            if (
-                $item->status === \App\Models\OrderItem::STATUS_IN_PROGRESS &&
-                $order->status !== \App\Models\Order::STATUS_IN_PROGRESS
-            ) {
-                $order->status = \App\Models\Order::STATUS_IN_PROGRESS;
-                $order->save();
-                // (лог смены статуса заказа у тебя уже пишется в Order::booted())
-            }
-
-            event(new \App\Events\OrderWorkflowUpdated($order->id));
+                       
 
             $refreshed = $this->mapItem($item->fresh(['order.user', 'order.promoCode', 'product.optionGroups', 'options']));
             return response()->json(['item' => $refreshed]);
@@ -589,9 +581,11 @@ class WorkflowController extends Controller
         });
 
         DB::afterCommit(function () use ($orderIds) {
-            foreach (array_keys($orderIds) as $oid) {
-                event(new \App\Events\OrderWorkflowUpdated($oid));
-            }
+            $ids = array_values(array_unique(array_keys($orderIds)));
+
+            Log::info('Bulk updated orders', ['count' => count($ids), 'ids' => $ids]);
+
+            
         });
 
         return response()->json(['items' => $updated]);
