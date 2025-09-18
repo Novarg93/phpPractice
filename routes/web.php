@@ -16,7 +16,8 @@ use App\Http\Controllers\{
     DiscordOAuthController,
     SearchController,
     TelegramAuthController,
-    GoogleOAuthController
+    GoogleOAuthController,
+    HomeController
 };
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Http;
@@ -49,6 +50,7 @@ Route::middleware(['auth', 'verified', 'can:workflow'])->group(function () {
 });
 
 
+
 Route::get('/auth/discord/redirect', [DiscordOAuthController::class, 'redirect'])
     ->name('social.discord.redirect');
 Route::get('/auth/discord/callback', [DiscordOAuthController::class, 'callback'])
@@ -64,7 +66,8 @@ Route::get('/auth/google/callback', [GoogleOAuthController::class, 'callback'])
 Route::middleware('auth')->delete('/auth/google/unlink', [GoogleOAuthController::class, 'unlink'])
     ->name('social.google.unlink');
 
-    
+Route::get('/', HomeController::class)->name('home');
+
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => Inertia::render('Dashboard'))->name('dashboard');
 
@@ -85,7 +88,7 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/social/telegram/unlink', [TelegramAuthController::class, 'unlink'])
         ->name('social.telegram.unlink');
     Route::delete('/auth/discord/unlink', [DiscordOAuthController::class, 'unlink'])
-    ->name('social.discord.unlink');
+        ->name('social.discord.unlink');
     // опционально:
     Route::post('/social/telegram/refresh-avatar', [TelegramAuthController::class, 'refreshAvatar'])
         ->name('social.telegram.refreshAvatar');

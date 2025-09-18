@@ -33,6 +33,6 @@ import FAQ from '@/Components/FAQ.vue'
         <Team/>
         <Community/>
         <Pricing/>        
-        <FAQ/>
+        <FAQ :faqs="$page.props.faqs"/>
     </DefaultLayout>    
 </template>
