@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3'
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
-import Breadcrumbs from '@/Components/Breadcrumbs.vue'
+import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import type { Category as BaseCategory, Product as BaseProduct, Paginator } from '@/types'
 
 type Cat = BaseCategory

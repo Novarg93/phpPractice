@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 import { Head } from '@inertiajs/vue3'
-import PostsBreadcrumbs from '@/Components/PostsBreadcrumbs.vue'
+import PostsBreadcrumbs from '@/components/PostsBreadcrumbs.vue'
 
 const props = defineProps<{
   post: {

@@ -3,12 +3,12 @@ import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 import { onMounted, onBeforeUnmount, ref, computed, watch } from 'vue'
 import axios from 'axios'
 import { toast } from 'vue-sonner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/table'
-import { Button } from '@/Components/ui/button'
-import { Input } from '@/Components/ui/input'
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/Components/ui/select'
-import { Popover, PopoverTrigger, PopoverContent } from '@/Components/ui/popover'
-import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/Components/ui/command'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 
 type Row = {
     id: number

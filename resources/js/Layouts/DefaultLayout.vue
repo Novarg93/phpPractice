@@ -12,7 +12,7 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from '@/Components/ui/dropdown-menu'
+} from '@/components/ui/dropdown-menu'
 import {
     Drawer,
     DrawerClose,
@@ -21,14 +21,14 @@ import {
     DrawerHeader,
     DrawerTitle,
     DrawerTrigger,
-} from '@/Components/ui/drawer'
-import { Toaster } from '@/Components/ui/sonner'
+} from '@/components/ui/drawer'
+import { Toaster } from '@/components/ui/sonner'
 import 'vue-sonner/style.css';
-import { Button } from "@/Components/ui/button";
-import { Separator } from "@/Components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { ShoppingCart } from "lucide-vue-next";
 import { ChevronsDown, Menu, X } from "lucide-vue-next";
-import GlobalSearch from '@/Components/GlobalSearch.vue'
+import GlobalSearch from '@/components/GlobalSearch.vue'
 
 const { summary, loadSummary } = useCartSummary()
 

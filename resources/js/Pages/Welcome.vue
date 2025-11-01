@@ -1,18 +1,18 @@
 <script setup>
 import DefaultLayout from '@/Layouts/DefaultLayout.vue';
-import Hero from '@/Components/Hero.vue';
+import Hero from '@/components/Hero.vue';
 import { Head, Link } from '@inertiajs/vue3';
-import Sponsors from '@/Components/Sponsors.vue';
-import Benefits from '@/Components/Benefits.vue';
-import Features from '@/Components/Features.vue';
-import Services from '@/Components/Services.vue';
-import HowItWorks from '@/Components/HowItWorks.vue';
-import Testimonials from '@/Components/Testimonials.vue';
-import Team from '@/Components/Team.vue';
-import Community from '@/Components/Community.vue';
-import Pricing from '@/Components/Pricing.vue';
-import Contact from '@/Components/Contact.vue';
-import FAQ from '@/Components/FAQ.vue'
+import Sponsors from '@/components/Sponsors.vue';
+import Benefits from '@/components/Benefits.vue';
+import Features from '@/components/Features.vue';
+import Services from '@/components/Services.vue';
+import HowItWorks from '@/components/HowItWorks.vue';
+import Testimonials from '@/components/Testimonials.vue';
+import Team from '@/components/Team.vue';
+import Community from '@/components/Community.vue';
+import Pricing from '@/components/Pricing.vue';
+import Contact from '@/components/Contact.vue';
+import FAQ from '@/components/FAQ.vue'
 
 
 

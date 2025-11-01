@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import DefaultLayout from '@/Layouts/DefaultLayout.vue';
 
-import Contact from '@/Components/Contact.vue';
+import Contact from '@/components/Contact.vue';
 import { Head } from '@inertiajs/vue3';
 
 </script>

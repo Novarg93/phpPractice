@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
-import OrderStatusBadge from '@/Components/OrderStatusBadge.vue'
+import OrderStatusBadge from '@/components/OrderStatusBadge.vue'
 import axios from 'axios'
 import { ref } from 'vue'
 import { router } from '@inertiajs/vue3'
-import { Button } from '@/Components/ui/button'
-import { Input } from "@/Components/ui/input"
+import { Button } from '@/components/ui/button'
+import { Input } from "@/components/ui/input"
 
 const props = defineProps<{
   order: {

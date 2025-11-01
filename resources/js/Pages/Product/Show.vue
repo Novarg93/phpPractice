@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import DefaultLayout from '@/Layouts/DefaultLayout.vue'
-import Breadcrumbs from '@/Components/Breadcrumbs.vue'
+import Breadcrumbs from '@/components/Breadcrumbs.vue'
 import axios from 'axios'
 import { useCartSummary, summary as cartSummary } from '@/composables/useCartSummary'
-import { resolveGroupComponent } from '@/Components/product/groups/registry'
+import { resolveGroupComponent } from '@/components/product/groups/registry'
 import { useProductOptions } from '@/composables/useProductOptions'
 import { usePricing } from '@/composables/usePricing'
 import type { Game, Category } from '@/types'
 import type { ProductWithGroups, SelectorGroup } from '@/types/product-options'
 import { ref, computed, onMounted } from 'vue'
-import RareItemBuilder from '@/Components/product/RareItemBuilder.vue'
-import UniqueD4Builder from '@/Components/product/UniqueD4Builder.vue'
+import RareItemBuilder from '@/components/product/RareItemBuilder.vue'
+import UniqueD4Builder from '@/components/product/UniqueD4Builder.vue'
 
 const props = defineProps<{
   game: Game

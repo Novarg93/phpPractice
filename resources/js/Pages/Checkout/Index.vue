@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import DefaultLayout from "@/Layouts/DefaultLayout.vue";
 import { loadStripe } from "@stripe/stripe-js";
-import GameNicknameForm from "@/Components/GameNicknameForm.vue";
+import GameNicknameForm from "@/components/GameNicknameForm.vue";
 import axios from "axios";
 import { ref } from "vue";
-import Input from "@/Components/ui/input/Input.vue";
-import Button from "@/Components/ui/button/Button.vue";
+import Input from "@/components/ui/input/Input.vue";
+import Button from "@/components/ui/button/Button.vue";
 
 const isLoading = ref(false);
 const nickFormRef = ref<any>(null);

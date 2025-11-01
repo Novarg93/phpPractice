@@ -1,0 +1,18 @@
+[0;1;32m●[0m php8.1-fpm.service - The PHP 8.1 FastCGI Process Manager
+     Loaded: loaded (/lib/systemd/system/php8.1-fpm.service; enabled; vendor preset: enabled)
+     Active: [0;1;32mactive (running)[0m since Sat 2025-11-01 19:02:36 UTC; 1h 1min ago
+       Docs: man:php-fpm8.1(8)
+   Main PID: 42661 (php-fpm8.1)
+     Status: "Processes active: 0, idle: 2, Requests: 0, slow: 0, Traffic: 0req/sec"
+      Tasks: 3 (limit: 1005)
+     Memory: 3.4M
+        CPU: 259ms
+     CGroup: /system.slice/php8.1-fpm.service
+             ├─42661 "php-fpm: master process (/etc/php/8.1/fpm/php-fpm.conf)" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" ""
+             ├─42662 "php-fpm: pool www" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" ""
+             └─42663 "php-fpm: pool www" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" ""
+
+Nov 01 19:02:36 phppractice systemd[1]: php8.1-fpm.service: Deactivated successfully.
+Nov 01 19:02:36 phppractice systemd[1]: Stopped The PHP 8.1 FastCGI Process Manager.
+Nov 01 19:02:36 phppractice systemd[1]: Starting The PHP 8.1 FastCGI Process Manager...
+Nov 01 19:02:36 phppractice systemd[1]: Started The PHP 8.1 FastCGI Process Manager.

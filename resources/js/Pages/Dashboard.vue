@@ -3,7 +3,7 @@ import DefaultLayout from '@/Layouts/DefaultLayout.vue'
 import { Head, usePage, router } from '@inertiajs/vue3'
 import { ref, computed } from 'vue'
 import { User as UserIcon, Link as LinkIcon, Unlink as UnlinkIcon } from 'lucide-vue-next'
-import TelegramLogin from '@/Components/TelegramLogin.vue'
+import TelegramLogin from '@/components/TelegramLogin.vue'
 
 // Если используешь Ziggy:
 declare const route: any

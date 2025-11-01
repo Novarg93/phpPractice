@@ -10,7 +10,7 @@ import {
     BreadcrumbList,
     BreadcrumbPage,
     BreadcrumbSeparator,
-} from '@/Components/ui/breadcrumb'
+} from '@/components/ui/breadcrumb'
 import { Link } from '@inertiajs/vue3'
 
 const { summary, loadSummary } = useCartSummary()
