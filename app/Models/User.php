@@ -9,6 +9,7 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Filament\Panel;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -63,6 +64,11 @@ class User extends Authenticatable implements MustVerifyEmail
         'discord_avatar_url',
         'telegram_avatar_url',
     ];
+
+    public function canAccessPanel(Panel $panel): bool
+    {
+        return in_array($this->role, [self::ROLE_ADMIN, self::ROLE_SUPPORT], true);
+    }
 
     /** Аватар из собственного upload (FileUpload) */
     protected function avatarUrl(): Attribute
