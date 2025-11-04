@@ -59,18 +59,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
-            ])
-            // тема (если используешь свою) — можно оставить
-            //->viteTheme('resources/css/filament/admin/theme.css')
-
-            // 👇 Правильный способ подключить Vite JS для панели в v4
-            ->renderHook(
-                'panels::body.end',
-                fn() => view('filament.hooks.realtime-scripts') // подключим наш blade
-            )
-            ->renderHook(
-                PanelsRenderHook::USER_MENU_BEFORE,
-                fn() => view('filament.hooks.realtime-counters-topbar')
-            );
+            ]);
     }
 }
+
